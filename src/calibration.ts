@@ -4,11 +4,8 @@
 //   validation  = new dots the model has NEVER seen, used to measure how good it is
 
 import type { EyeFeatures } from './eyeFeatures.ts'
+import type { FrameStream } from './frameStream.ts'
 import type { Sample, ScreenPoint } from './gazeModel.ts'
-
-// `subscribe` lets this module "listen" to the stream of eye features from the main loop.
-// It returns a function that stops listening (unsubscribe).
-export type Subscribe = (listener: (f: EyeFeatures) => void) => () => void
 
 // Everything recorded while looking at one dot.
 export type Recording = { target: ScreenPoint; frames: EyeFeatures[] }
@@ -35,7 +32,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export async function recordAtTargets(
   layer: HTMLElement,
-  subscribe: Subscribe,
+  stream: FrameStream,
   targets: ScreenPoint[],
 ): Promise<Recording[]> {
   layer.hidden = false
@@ -54,7 +51,7 @@ export async function recordAtTargets(
       // Shrinking the dot while recording pulls the eye to its exact center.
       dot.classList.add('collecting')
       const frames: EyeFeatures[] = []
-      const unsubscribe = subscribe((f) => frames.push(f))
+      const unsubscribe = stream.subscribe((info) => frames.push(info.features))
       await wait(COLLECT_MS)
       unsubscribe()
 

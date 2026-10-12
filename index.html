@@ -7,16 +7,36 @@
     <title>Swar Netra</title>
   </head>
   <body>
-    <div id="topbar">
+    <!-- View 1: setup (before calibration) -->
+    <div id="setup">
       <button id="calibrate" disabled>Calibrate</button>
-      <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
       <div id="status">Loading…</div>
     </div>
 
-    <!-- Accuracy report card, filled in after calibration -->
-    <div id="report" hidden></div>
+    <!-- View 2: the communication board (after calibration) -->
+    <div id="board" hidden>
+      <header id="board-top">
+        <!-- The last chosen word, shown big so others in the room can read it too -->
+        <div id="message">
+          <span id="message-icon"></span>
+          <span id="message-text">Look at a word to say it</span>
+        </div>
+        <!-- Controls for the caregiver (used with the mouse, not the eyes) -->
+        <div id="caregiver">
+          <button id="recalibrate">Recalibrate</button>
+          <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
+          <label><input type="checkbox" id="show-dot" checked /> Gaze dot</label>
+          <details>
+            <summary>Accuracy</summary>
+            <div id="report"></div>
+          </details>
+        </div>
+      </header>
+      <div id="head-warning" hidden></div>
+      <main id="words"></main>
+    </div>
 
-    <!-- Small camera preview in the corner. The canvas sits exactly on top of the video. -->
+    <!-- Small camera preview, top-right. The canvas sits exactly on top of the video. -->
     <div id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
