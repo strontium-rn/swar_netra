@@ -99,3 +99,32 @@ button:disabled {
   pointer-events: none;
   z-index: 20;
 }
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Report card */
+#report {
+  padding: 0 16px;
+}
+
+#report table {
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+#report th,
+#report td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #333;
+  text-align: left;
+}
+
+#report tr.best td {
+  color: #00e5ff;
+  font-weight: 600;
+}

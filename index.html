@@ -9,8 +9,12 @@
   <body>
     <div id="topbar">
       <button id="calibrate" disabled>Calibrate</button>
+      <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
       <div id="status">Loading…</div>
     </div>
+
+    <!-- Accuracy report card, filled in after calibration -->
+    <div id="report" hidden></div>
 
     <!-- Small camera preview in the corner. The canvas sits exactly on top of the video. -->
     <div id="stage">

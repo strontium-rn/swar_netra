@@ -6,13 +6,23 @@ import { startCamera } from './camera.ts'
 import { LandmarkDetector } from './landmarks.ts'
 import { drawPoints } from './debugView.ts'
 import { computeEyeFeatures, type EyeFeatures } from './eyeFeatures.ts'
-import { runCalibration, type Subscribe } from './calibration.ts'
-import { GazeModel } from './gazeModel.ts'
+import {
+  CALIBRATION_TARGETS,
+  VALIDATION_TARGETS,
+  recordAtTargets,
+  toSamples,
+  type Subscribe,
+} from './calibration.ts'
+import { GazeModel, IRIS_LOOK_HEAD, IRIS_ONLY } from './gazeModel.ts'
+import { GazeSmoother } from './smoothing.ts'
+import { scoreModel, type Score } from './evaluate.ts'
 
 const video = document.querySelector<HTMLVideoElement>('#video')!
 const overlay = document.querySelector<HTMLCanvasElement>('#overlay')!
 const status = document.querySelector<HTMLDivElement>('#status')!
 const calibrateBtn = document.querySelector<HTMLButtonElement>('#calibrate')!
+const smoothToggle = document.querySelector<HTMLInputElement>('#smooth')!
+const report = document.querySelector<HTMLDivElement>('#report')!
 const calibLayer = document.querySelector<HTMLDivElement>('#calib-layer')!
 const gazeDot = document.querySelector<HTMLDivElement>('#gaze-dot')!
 
@@ -27,6 +37,7 @@ const subscribe: Subscribe = (listener) => {
 }
 
 let gazeModel: GazeModel | null = null // null until calibration is done
+const smoother = new GazeSmoother()
 
 async function main() {
   status.textContent = 'Starting camera…'
@@ -43,6 +54,7 @@ async function main() {
   calibrateBtn.disabled = false
 
   let lastVideoTime = -1
+  let lastFrameMs = performance.now()
 
   // The main loop. requestAnimationFrame calls `loop` right before each screen
   // refresh (60–120 times a second on a Mac).
@@ -50,15 +62,20 @@ async function main() {
     // Skip the work if the camera hasn't produced a new frame yet.
     if (video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime
-      const points = detector.detect(video, performance.now())
-      drawPoints(overlay, points)
+      const now = performance.now()
+      const dt = (now - lastFrameMs) / 1000 // seconds since the previous frame
+      lastFrameMs = now
 
-      if (points) {
-        const features = computeEyeFeatures(points, aspect)
+      const frame = detector.detect(video, now)
+      drawPoints(overlay, frame?.points ?? null)
+
+      if (frame) {
+        const features = computeEyeFeatures(frame, aspect)
         for (const listener of listeners) listener(features)
 
         if (gazeModel) {
-          const gaze = gazeModel.predict(features)
+          let gaze = gazeModel.predict(features)
+          if (smoothToggle.checked) gaze = smoother.smooth(gaze, dt)
           // Clamp to 0..1 so the dot never leaves the screen.
           const x = Math.min(1, Math.max(0, gaze.x)) * window.innerWidth
           const y = Math.min(1, Math.max(0, gaze.y)) * window.innerHeight
@@ -74,20 +91,56 @@ async function main() {
 calibrateBtn.addEventListener('click', async () => {
   calibrateBtn.disabled = true
   gazeDot.hidden = true
+  report.hidden = true
   try {
-    // Full screen, so the 9 dots cover the whole display. The browser only allows this
+    // Full screen, so the dots cover the whole display. The browser only allows this
     // right after a click, which is why calibration starts from a button.
     await document.documentElement.requestFullscreen().catch(() => {})
-    const samples = await runCalibration(calibLayer, subscribe)
-    gazeModel = GazeModel.fit(samples)
+
+    // 1. Learn: record at 16 spots, then train both recipes on the SAME data (a fair comparison).
+    const calibration = await recordAtTargets(calibLayer, subscribe, CALIBRATION_TARGETS)
+    const samples = toSamples(calibration)
+    const models = [IRIS_ONLY, IRIS_LOOK_HEAD].map((set) => GazeModel.fit(samples, set))
+
+    // 2. Test: 5 new spots the models have never seen.
+    const validation = await recordAtTargets(calibLayer, subscribe, VALIDATION_TARGETS)
+    const scores = models.map((m) => scoreModel(m, validation))
+
+    // 3. Use whichever model scored best (smallest total aim error).
+    const total = (s: Score) => s.errX + s.errY
+    const best = scores.indexOf(scores.reduce((a, b) => (total(b) < total(a) ? b : a)))
+    gazeModel = models[best]
+
+    showReport(scores, best)
     gazeDot.hidden = false
-    status.textContent = `Calibrated with ${samples.length} samples. Look around: the red dot follows your gaze.`
+    status.textContent = `Using "${models[best].set.name}". Look around: the red dot follows your gaze.`
   } catch (err) {
     status.textContent = `Calibration failed: ${(err as Error).message}`
   } finally {
     calibrateBtn.disabled = false
   }
 })
+
+function showReport(scores: Score[], best: number) {
+  // Convert % of screen to pixels too, since button sizes will be in pixels.
+  const fmt = (pct: number, screenPx: number) => `${pct.toFixed(1)}% (${Math.round((pct / 100) * screenPx)}px)`
+  const rows = scores
+    .map(
+      (s, i) => `<tr class="${i === best ? 'best' : ''}">
+        <td>${s.name}</td>
+        <td>${fmt(s.errX, window.innerWidth)}</td>
+        <td>${fmt(s.errY, window.innerHeight)}</td>
+        <td>${s.jitter.toFixed(1)}%</td>
+        <td>${s.jitterSmoothed.toFixed(1)}%</td>
+      </tr>`,
+    )
+    .join('')
+  report.innerHTML = `<table>
+    <tr><th>Model</th><th>Aim error ↔</th><th>Aim error ↕</th><th>Jitter</th><th>Jitter (smoothed)</th></tr>
+    ${rows}
+  </table>`
+  report.hidden = false
+}
 
 main().catch((err) => {
   // If anything fails (e.g. camera permission denied), show it on screen instead of failing silently.

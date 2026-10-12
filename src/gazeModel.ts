@@ -1,8 +1,8 @@
 // Pipeline box 3b: Gaze model.
 // Job: learn a formula that turns eye features into a screen position.
-// Pure math: no camera, no screen. That makes it easy to test and to replace later.
+// Pure math: no camera, no screen. That makes it easy to test and to compare versions.
 
-import type { EyeFeatures } from './eyeFeatures.ts'
+import type { EyeFeatures, FeatureName } from './eyeFeatures.ts'
 
 // A screen position as fractions: x = 0 is the left edge, 1 is the right edge.
 export type ScreenPoint = { x: number; y: number }
@@ -10,44 +10,64 @@ export type ScreenPoint = { x: number; y: number }
 // One calibration example: "the eyes looked like `features` while looking at `target`".
 export type Sample = { features: EyeFeatures; target: ScreenPoint }
 
-// Mean and spread of each feature, used to rescale features to similar sizes.
-type Scale = { mean: EyeFeatures; std: EyeFeatures }
+// A "recipe" for the formula: which features it uses.
+// `linear` features each get one weight. The two `curved` features also get
+// squared and multiplied terms, so the formula can bend (the eye is a ball,
+// so iris movement and screen position aren't perfectly proportional).
+export type FeatureSet = { name: string; linear: FeatureName[]; curved: [FeatureName, FeatureName] }
 
-// The "terms" of our formula. The prediction is:
-//   screenX = w0*1 + w1*x + w2*y + w3*x*y + w4*x² + w5*y² + w6*open
-// The squared terms let the formula bend, because the eye is a ball, not a flat mirror,
-// so iris movement and screen position aren't perfectly proportional.
-function terms(f: EyeFeatures, s: Scale): number[] {
-  const x = (f.x - s.mean.x) / s.std.x
-  const y = (f.y - s.mean.y) / s.std.y
-  const o = (f.open - s.mean.open) / s.std.open
-  return [1, x, y, x * y, x * x, y * y, o]
+// Step 2's original recipe, kept so we can compare against it.
+export const IRIS_ONLY: FeatureSet = {
+  name: 'Iris only (old)',
+  linear: ['irisX', 'irisY', 'open'],
+  curved: ['irisX', 'irisY'],
 }
 
+export const IRIS_LOOK_HEAD: FeatureSet = {
+  name: 'Iris + eye-look + head (new)',
+  linear: ['irisX', 'irisY', 'open', 'lookH', 'lookV', 'yaw', 'pitch'],
+  curved: ['irisX', 'irisY'],
+}
+
+// Mean and spread of each feature, used to rescale all features to similar sizes.
+// Without this, a feature measured in big numbers would dominate small ones.
+type Scale = { mean: Record<FeatureName, number>; std: Record<FeatureName, number> }
+
 export class GazeModel {
+  readonly set: FeatureSet
   private wx: number[] // weights for screen X
   private wy: number[] // weights for screen Y
   private scale: Scale
 
-  private constructor(wx: number[], wy: number[], scale: Scale) {
+  private constructor(set: FeatureSet, wx: number[], wy: number[], scale: Scale) {
+    this.set = set
     this.wx = wx
     this.wy = wy
     this.scale = scale
   }
 
   // "Training": find the weights that make predictions closest to the real targets.
-  static fit(samples: Sample[]): GazeModel {
+  static fit(samples: Sample[], set: FeatureSet): GazeModel {
     const scale = computeScale(samples.map((s) => s.features))
-    const rows = samples.map((s) => terms(s.features, scale))
+    const rows = samples.map((s) => terms(s.features, set, scale))
     const wx = leastSquares(rows, samples.map((s) => s.target.x))
     const wy = leastSquares(rows, samples.map((s) => s.target.y))
-    return new GazeModel(wx, wy, scale)
+    return new GazeModel(set, wx, wy, scale)
   }
 
   predict(f: EyeFeatures): ScreenPoint {
-    const t = terms(f, this.scale)
+    const t = terms(f, this.set, this.scale)
     return { x: dot(t, this.wx), y: dot(t, this.wy) }
   }
+}
+
+// The formula's terms, e.g. for IRIS_ONLY:
+//   [1, irisX, irisY, open, irisX², irisY², irisX·irisY]
+// The prediction is each term times its learned weight, all added up.
+function terms(f: EyeFeatures, set: FeatureSet, s: Scale): number[] {
+  const v = (k: FeatureName) => (f[k] - s.mean[k]) / s.std[k]
+  const [a, b] = set.curved
+  return [1, ...set.linear.map(v), v(a) * v(a), v(b) * v(b), v(a) * v(b)]
 }
 
 // ---- Math helpers ----
@@ -57,10 +77,9 @@ function dot(a: number[], b: number[]): number {
 }
 
 function computeScale(fs: EyeFeatures[]): Scale {
-  const keys = ['x', 'y', 'open'] as const
-  const mean = { x: 0, y: 0, open: 0 }
-  const std = { x: 0, y: 0, open: 0 }
-  for (const k of keys) {
+  const mean = {} as Record<FeatureName, number>
+  const std = {} as Record<FeatureName, number>
+  for (const k of Object.keys(fs[0]) as FeatureName[]) {
     mean[k] = fs.reduce((sum, f) => sum + f[k], 0) / fs.length
     const variance = fs.reduce((sum, f) => sum + (f[k] - mean[k]) ** 2, 0) / fs.length
     std[k] = Math.sqrt(variance) || 1 // avoid dividing by 0
@@ -71,9 +90,9 @@ function computeScale(fs: EyeFeatures[]): Scale {
 // Least squares: find weights w that minimize the total squared error
 // between (rows · w) and the targets. Solved with the "normal equations":
 //   (Aᵀ A + λI) w = Aᵀ t
-// λ (ridge) is a tiny penalty on big weights. It stops the formula from going
+// λ (ridge) is a small penalty on big weights. It stops the formula from going
 // wild when the data is noisy, a guard against "overfitting".
-function leastSquares(rows: number[][], targets: number[], lambda = 1e-3): number[] {
+function leastSquares(rows: number[][], targets: number[], lambda = 1e-2): number[] {
   const k = rows[0].length
   const A = Array.from({ length: k }, () => new Array<number>(k).fill(0))
   const b = new Array<number>(k).fill(0)
