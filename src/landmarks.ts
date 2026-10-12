@@ -9,8 +9,9 @@ export type Point = { x: number; y: number; z: number }
 
 // Index numbers of the iris points inside the 478-point list.
 // 468 and 473 are the iris centers; the other 4 of each are around the iris edge.
-export const LEFT_IRIS = [468, 469, 470, 471, 472]
-export const RIGHT_IRIS = [473, 474, 475, 476, 477]
+// Left/right means the person's OWN left/right (not the side of the image).
+export const RIGHT_IRIS = [468, 469, 470, 471, 472]
+export const LEFT_IRIS = [473, 474, 475, 476, 477]
 
 // The model's code (WebAssembly) and its trained weights are downloaded once
 // when the page loads. Only these files are downloaded; your video never leaves the laptop.

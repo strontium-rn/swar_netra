@@ -7,12 +7,23 @@
     <title>Swar Netra</title>
   </head>
   <body>
-    <div id="status">Loading…</div>
-    <!-- The canvas sits exactly on top of the video (see style.css) -->
+    <div id="topbar">
+      <button id="calibrate" disabled>Calibrate</button>
+      <div id="status">Loading…</div>
+    </div>
+
+    <!-- Small camera preview in the corner. The canvas sits exactly on top of the video. -->
     <div id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
+
+    <!-- Full-screen layer where the calibration dots appear -->
+    <div id="calib-layer" hidden></div>
+
+    <!-- Shows where the system thinks you're looking -->
+    <div id="gaze-dot" hidden></div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
