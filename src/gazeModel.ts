@@ -24,6 +24,11 @@ export type FeatureSet = { name: string; linear: FeatureName[]; squared: Feature
 export const FEATURE_SETS: FeatureSet[] = [
   { name: 'Iris ↔ only', linear: ['irisX'], squared: [], cubed: [] },
   { name: 'Iris ↔ S-curve', linear: ['irisX'], squared: [], cubed: ['irisX'] },
+  // MediaPipe's own "eye looking left/right" reading. It comes from the whole eye area,
+  // not just the iris points, so it may hold up better when glasses glare covers the iris.
+  { name: 'Eye-look ↔ S-curve', linear: ['lookH'], squared: [], cubed: ['lookH'] },
+  // Both readings together: two noisy measurements of the same thing average out.
+  { name: 'Iris + eye-look ↔', linear: ['irisX', 'lookH'], squared: [], cubed: ['irisX'] },
   { name: 'Iris ↔ S-curve + head turn', linear: ['irisX', 'yaw'], squared: ['irisX'], cubed: ['irisX'] },
   { name: 'Iris 2D', linear: ['irisX', 'irisY', 'open', 'pitch'], squared: ['irisY'], cubed: ['irisX'] },
   {
