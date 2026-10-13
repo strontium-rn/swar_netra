@@ -22,9 +22,10 @@ export type FeatureName = keyof EyeFeatures
 
 // Landmark index numbers for each eye (from MediaPipe's face mesh map).
 // "left"/"right" corner = the corner on the left/right side of the camera image.
-type EyeIndices = { iris: number; left: number; right: number; top: number; bottom: number }
-const RIGHT_EYE: EyeIndices = { iris: 468, left: 33, right: 133, top: 159, bottom: 145 }
-const LEFT_EYE: EyeIndices = { iris: 473, left: 362, right: 263, top: 386, bottom: 374 }
+// `iris` lists the iris center plus the 4 points on the iris edge.
+type EyeIndices = { iris: number[]; left: number; right: number; top: number; bottom: number }
+const RIGHT_EYE: EyeIndices = { iris: [468, 469, 470, 471, 472], left: 33, right: 133, top: 159, bottom: 145 }
+const LEFT_EYE: EyeIndices = { iris: [473, 474, 475, 476, 477], left: 362, right: 263, top: 386, bottom: 374 }
 
 function oneEye(points: Point[], eye: EyeIndices, aspect: number) {
   // Points are 0..1 of the image width and height, but the image isn't square (16:9).
@@ -32,7 +33,13 @@ function oneEye(points: Point[], eye: EyeIndices, aspect: number) {
   const get = (i: number) => ({ x: points[i].x * aspect, y: points[i].y })
   const a = get(eye.left)
   const b = get(eye.right)
-  const iris = get(eye.iris)
+  // Iris center = average of all 5 iris points. Each point wobbles a little from frame
+  // to frame; averaging 5 independent wobbles cancels much of it out.
+  const irisPoints = eye.iris.map(get)
+  const iris = {
+    x: irisPoints.reduce((s, p) => s + p.x, 0) / irisPoints.length,
+    y: irisPoints.reduce((s, p) => s + p.y, 0) / irisPoints.length,
+  }
   const top = get(eye.top)
   const bottom = get(eye.bottom)
 

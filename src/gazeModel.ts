@@ -11,27 +11,31 @@ export type ScreenPoint = { x: number; y: number }
 export type Sample = { features: EyeFeatures; target: ScreenPoint }
 
 // A "recipe" for the formula: which features it uses.
-// `linear` features each get one weight. `squared` features also get a squared term,
-// so the formula can bend (the eye is a ball, so iris movement and screen position
-// aren't perfectly proportional). Every term is one more weight the model must learn,
+// `linear` features each get one weight. Every term is one more weight the model must learn,
 // and more weights need more calibration data, or the model memorizes noise ("overfitting").
-export type FeatureSet = { name: string; linear: FeatureName[]; squared: FeatureName[] }
+// `squared` (x²) bends the formula the SAME way on both sides, like a parabola.
+// `cubed` (x³) bends it in OPPOSITE ways on each side, making an S-curve. That's the
+// shape of real eye movement: the eye is a rotating ball, so toward either edge of the
+// screen the iris moves a bit less per centimeter, on both sides symmetrically.
+export type FeatureSet = { name: string; linear: FeatureName[]; squared: FeatureName[]; cubed: FeatureName[] }
 
-// Candidate recipes, from simplest (2 weights) to most flexible (10 weights).
+// Candidate recipes, from simplest (2 weights) to most flexible (11 weights).
 // Cross-validation picks the one that works best for this person, this time.
 export const FEATURE_SETS: FeatureSet[] = [
-  { name: 'Iris ↔ only', linear: ['irisX'], squared: [] },
-  { name: 'Iris ↔ + head turn', linear: ['irisX', 'yaw'], squared: ['irisX'] },
-  { name: 'Iris 2D', linear: ['irisX', 'irisY', 'open', 'pitch'], squared: ['irisY'] },
+  { name: 'Iris ↔ only', linear: ['irisX'], squared: [], cubed: [] },
+  { name: 'Iris ↔ S-curve', linear: ['irisX'], squared: [], cubed: ['irisX'] },
+  { name: 'Iris ↔ S-curve + head turn', linear: ['irisX', 'yaw'], squared: ['irisX'], cubed: ['irisX'] },
+  { name: 'Iris 2D', linear: ['irisX', 'irisY', 'open', 'pitch'], squared: ['irisY'], cubed: ['irisX'] },
   {
     name: 'Iris + eye-look + head',
     linear: ['irisX', 'irisY', 'open', 'lookH', 'lookV', 'yaw', 'pitch'],
-    squared: ['irisX', 'irisY'],
+    squared: ['irisY'],
+    cubed: ['irisX'],
   },
 ]
 
 // Number of weights a recipe has (the +1 is the constant term).
-export const weightCount = (set: FeatureSet) => 1 + set.linear.length + set.squared.length
+export const weightCount = (set: FeatureSet) => 1 + set.linear.length + set.squared.length + set.cubed.length
 
 // Mean and spread of each feature, used to rescale all features to similar sizes.
 // Without this, a feature measured in big numbers would dominate small ones.
@@ -79,11 +83,11 @@ export class GazeModel {
 
 export type SavedModel = { set: string; wx: number[]; wy: number[]; scale: Scale }
 
-// The formula's terms, e.g. for "Iris ↔ + head turn": [1, irisX, yaw, irisX²]
+// The formula's terms, e.g. for "Iris ↔ S-curve": [1, irisX, irisX³]
 // The prediction is each term times its learned weight, all added up.
 function terms(f: EyeFeatures, set: FeatureSet, s: Scale): number[] {
   const v = (k: FeatureName) => (f[k] - s.mean[k]) / s.std[k]
-  return [1, ...set.linear.map(v), ...set.squared.map((k) => v(k) ** 2)]
+  return [1, ...set.linear.map(v), ...set.squared.map((k) => v(k) ** 2), ...set.cubed.map((k) => v(k) ** 3)]
 }
 
 // ---- Math helpers ----

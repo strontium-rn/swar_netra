@@ -5,15 +5,18 @@
 
 export type TileView = { id: string; label: string; icon: string; color: string }
 
-// Hysteresis: to switch from one button to its neighbor, the gaze must go this far
-// PAST the border between them (fraction of screen width). Without it, a gaze sitting
-// near a border flickers between two buttons and neither ever fills up.
-const SWITCH_MARGIN = 0.025
+// Debouncing: to switch to another button, the gaze must stay in that button's column
+// for this long. A gaze sitting on a border flickers back and forth faster than this, so
+// it can't cause flicker; but a real move (even one that lands near a border because
+// the estimate is a bit off) switches quickly, without the user having to push their eyes.
+const SWITCH_MS = 120
 
 export class Board {
   private container: HTMLElement
   private buttons: { id: string | null; el: HTMLElement }[] = [] // id null = empty column
   private current: string | null = null // button the gaze is on right now
+  private candidate: string | null = null // a different button the gaze has moved to
+  private candidateSinceMs = 0 // when the gaze arrived on the candidate
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -39,20 +42,28 @@ export class Board {
     })
 
     this.current = gazeColumn >= 0 ? (this.buttons[gazeColumn]?.id ?? null) : null
+    this.candidate = null
     return this.current
   }
 
-  // Used live: remembers the current button, so it applies hysteresis.
-  // `x` is a fraction of the screen width (0 = left edge, 1 = right edge).
-  wordAt(x: number): string | null {
+  // Used live: remembers the current button, so it can debounce switches.
+  // `x` is a fraction of the screen width (0 = left edge, 1 = right edge); `now` in ms.
+  wordAt(x: number, now: number): string | null {
     const nearest = this.nearestWord(x)
-    const cur = this.columns().find((c) => c.id !== null && c.id === this.current)
-    // Hysteresis: stay on the current button unless the gaze is clearly inside another one.
-    if (cur && nearest !== cur.id) {
-      const clearlyOutside = x < cur.left - SWITCH_MARGIN || x > cur.right + SWITCH_MARGIN
-      if (!clearlyOutside) return this.current
+    if (nearest === this.current || this.current === null) {
+      this.current = nearest
+      this.candidate = null
+      return this.current
     }
-    this.current = nearest
+    // The gaze is on a different button: switch only once it has stayed there long enough.
+    if (nearest !== this.candidate) {
+      this.candidate = nearest
+      this.candidateSinceMs = now
+    }
+    if (now - this.candidateSinceMs >= SWITCH_MS) {
+      this.current = nearest
+      this.candidate = null
+    }
     return this.current
   }
 

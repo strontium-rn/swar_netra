@@ -53,16 +53,9 @@ const smoother = new GazeSmoother()
 const dwell = new DwellSelector()
 const board = new Board($<HTMLElement>('#words'))
 
-// After a word is spoken, wait this long (so the flash is visible), then return home.
-// Every message then starts from the same place, which helps motor planning.
-const RETURN_HOME_MS = 700
-
-let page: PageId = 'home'
-
 // Show a page of the board. The button that lands under the gaze is locked until
 // the user looks away, so a page change never selects something by accident.
 function showPage(next: PageId) {
-  page = next
   const tiles = pageTiles(next).map((t) => t && { id: t.id, label: t.label, icon: t.icon, color: tileColor(t, next) })
   dwell.reset(board.setPage(tiles))
   const category = next === 'home' ? null : findTile(next)
@@ -152,7 +145,7 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
 
   showWarning(drift)
   // Fail-safe: if the head is out of position, the gaze can't be trusted, so select nothing.
-  updateBoard(drift ? null : board.wordAt(x), now)
+  updateBoard(drift ? null : board.wordAt(x, now), now)
 }
 
 // Before calibrating, make sure the camera can see the face. Starting without a face
@@ -185,11 +178,7 @@ function updateBoard(target: string | null, now: number) {
     messageIcon.textContent = tile.icon
     messageText.textContent = tile.label
     speak(tile.speak)
-    if (page !== 'home') {
-      setTimeout(() => {
-        if (mode === 'board') showPage('home')
-      }, RETURN_HOME_MS)
-    }
+    // Stay on this page: only the user decides when to go back (via the Back button).
   }
 }
 
@@ -264,8 +253,10 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
       </tr>`,
     )
     .join('')
+  // Bias: which way the estimate leans on each button (← left, → right), if noticeably.
+  const lean = (b: number | undefined) => (b === undefined || Math.abs(b) < 1 ? '' : ` ${b < 0 ? '←' : '→'}${Math.abs(b).toFixed(1)}%`)
   const perWord = Object.entries(score.hitByWord)
-    .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}`)
+    .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}${lean(score.biasByWord[id])}`)
     .join(' &nbsp; ')
   report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
@@ -273,7 +264,8 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
     <tr><th>Recipe</th><th>Weights</th><th>CV error ↔</th><th>CV error ↕</th></tr>
     ${rows}
   </table>
-  <p class="muted">CV error = aim error on spots the recipe never trained on (% of screen).<br>
+  <p class="muted">← / → = which way the estimate leans on that button.<br>
+  CV error = RMS aim error on spots the recipe never trained on (% of screen).<br>
   Highlighted = used. Among near-equal recipes, the simplest wins.</p>`
 }
 

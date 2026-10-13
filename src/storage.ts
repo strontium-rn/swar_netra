@@ -8,9 +8,10 @@
 import type { SavedModel } from './gazeModel.ts'
 import type { HeadPose } from './headGuard.ts'
 
-// The "v2" is a schema version. When what we save changes shape (v1 → v2 happened when
-// the model recipes changed), we bump it, so the app never reads old data in the wrong shape.
-const KEY = 'swar-netra-calibration-v2'
+// The "v3" is a schema version. When what we save changes meaning, we bump it, so the app
+// never reads old data the wrong way. v2: the model recipes changed. v3: the iris center
+// is now measured differently, so weights learned for the old measurement no longer fit.
+const KEY = 'swar-netra-calibration-v3'
 
 export type SavedCalibration = {
   xModel: SavedModel // model used for left/right

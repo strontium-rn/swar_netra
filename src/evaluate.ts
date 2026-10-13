@@ -11,23 +11,37 @@ import { GazeModel, type FeatureSet, type ScreenPoint } from './gazeModel.ts'
 import { GazeSmoother } from './smoothing.ts'
 
 // Cross-validation ("leave one spot out"): hide one calibration spot, train on the rest,
-// and check the prediction at the hidden spot. Repeat for every spot and average.
+// and check the prediction at the hidden spot. Repeat for every spot.
 // Each spot is tested by a model that never saw it, so a recipe that only memorizes
 // its training spots (overfitting) scores badly here even if it fits them perfectly.
-// Returns the average aim error in % of the screen.
+//
+// Two details make the test fair:
+// - Only spots INSIDE the range of the remaining spots are scored. Hiding the outermost
+//   spot would force the model to guess beyond all its data ("extrapolation"), which
+//   unfairly punishes curved recipes, and isn't how the board is used anyway.
+// - Errors are combined as RMS (root mean square): squaring makes one big miss count
+//   much more than several small ones, so a single hard-to-reach button can't hide
+//   behind a good average.
+// Returns the RMS aim error in % of the screen.
 export function crossValidate(recordings: Recording[], set: FeatureSet): { errX: number; errY: number } {
   const usable = recordings.filter((r) => r.frames.length > 0) // a spot can be empty if the face was lost
-  let errX = 0
-  let errY = 0
+  let sumX = 0
+  let sumY = 0
+  let scored = 0
   for (let i = 0; i < usable.length; i++) {
-    const training = usable.filter((_, j) => j !== i)
-    const model = GazeModel.fit(toSamples(training), set)
     const held = usable[i]
+    const training = usable.filter((_, j) => j !== i)
+    const xs = training.map((r) => r.target.x)
+    if (held.target.x < Math.min(...xs) || held.target.x > Math.max(...xs)) continue // would be extrapolation
+
+    const model = GazeModel.fit(toSamples(training), set)
     const m = mean(held.frames.map((f) => model.predict(f)))
-    errX += Math.abs(m.x - held.target.x)
-    errY += Math.abs(m.y - held.target.y)
+    sumX += (m.x - held.target.x) ** 2
+    sumY += (m.y - held.target.y) ** 2
+    scored++
   }
-  return { errX: (errX / usable.length) * 100, errY: (errY / usable.length) * 100 }
+  if (scored === 0) return { errX: Infinity, errY: Infinity }
+  return { errX: Math.sqrt(sumX / scored) * 100, errY: Math.sqrt(sumY / scored) * 100 }
 }
 
 // All numbers are percentages.
@@ -35,6 +49,7 @@ export type Score = {
   name: string
   hitRate: number // % of frames on the right word, averaged over all words
   hitByWord: Record<string, number> // the same, per word
+  biasByWord: Record<string, number> // which way each button's estimate leans: negative = left, positive = right
   errX: number // % of screen width
   errY: number // % of screen height
   jitter: number // % of screen, after smoothing
@@ -46,6 +61,7 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
   let errY = 0
   let jitter = 0
   const hitByWord: Record<string, number> = {}
+  const biasByWord: Record<string, number> = {}
 
   for (const r of recordings) {
     if (r.frames.length < 4) {
@@ -63,6 +79,7 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
     hitByWord[r.target.id] = settled.length ? (hits / settled.length) * 100 : 0
 
     const m = mean(settled)
+    biasByWord[r.target.id] = (m.x - r.target.x) * 100
     errX += Math.abs(m.x - r.target.x)
     errY += Math.abs(m.y - r.target.y)
     jitter += spread(settled)
@@ -74,6 +91,7 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
     name: model.set.name,
     hitRate: hitValues.reduce((s, v) => s + v, 0) / hitValues.length,
     hitByWord,
+    biasByWord,
     errX: (errX / n) * 100,
     errY: (errY / n) * 100,
     jitter: (jitter / n) * 100,
