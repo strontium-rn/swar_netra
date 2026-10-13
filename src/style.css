@@ -34,13 +34,41 @@ label {
   cursor: pointer;
 }
 
-/* ---- Setup view ---- */
-#setup {
+/* ---- Welcome card (before the first calibration) ---- */
+#welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.card {
+  max-width: 520px;
+  padding: 28px 32px;
+  border-radius: 16px;
+  background: #1d1d1d;
   font-size: 18px;
+  line-height: 1.5;
+}
+
+.card h1 {
+  margin: 0 0 8px;
+}
+
+.card ul {
+  padding-left: 20px;
+  color: #bbb;
+}
+
+#status {
+  color: #ffb74d;
+}
+
+#status.ok {
+  color: #3ddc84;
 }
 
 /* ---- Camera preview, top-right ----
@@ -113,8 +141,18 @@ label {
   padding: 6px 12px;
 }
 
+#caregiver .row {
+  display: flex;
+  gap: 12px;
+}
+
 #caregiver summary {
   cursor: pointer;
+}
+
+.muted {
+  color: #888;
+  font-size: 13px;
 }
 
 /* The accuracy table opens as a floating panel over the board. */
@@ -191,6 +229,12 @@ label {
   position: relative; /* keep text above the fill layer */
 }
 
+/* The word under the gaze gets a white outline, so the user sees what the system sees. */
+.word.looking {
+  outline: 6px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -6px;
+}
+
 /* Dwell fill: a light layer that grows from the bottom as --progress goes 0 → 1. */
 .word::before {
   content: '';
@@ -221,20 +265,19 @@ label {
 }
 
 /* ---- Calibration ---- */
+/* See-through, so the board stays visible: we calibrate on the real buttons. */
 #calib-layer {
   position: fixed;
   inset: 0;
   z-index: 10;
-  background: #111;
+  background: rgba(0, 0, 0, 0.55);
 }
 
-.calib-dot {
+.calib-star {
   position: absolute;
-  width: 44px;
-  height: 44px;
-  margin: -22px 0 0 -22px; /* center the dot on its left/top point */
-  border-radius: 50%;
-  background: #ff3b5c;
+  font-size: 64px;
+  line-height: 1;
+  transform: translate(-50%, -50%); /* center the star on its left/top point */
   /* Glide between spots (easier for the eye to follow) and shrink while recording. */
   transition:
     left 0.4s ease,
@@ -242,17 +285,26 @@ label {
     transform 1s linear;
 }
 
-.calib-dot::after {
-  /* tiny white center to focus on */
-  content: '';
-  position: absolute;
-  inset: 18px;
-  border-radius: 50%;
-  background: #fff;
+.calib-star.collecting {
+  transform: translate(-50%, -50%) scale(0.45) rotate(72deg);
 }
 
-.calib-dot.collecting {
-  transform: scale(0.35);
+.calib-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 24px 40px;
+  border-radius: 16px;
+  background: #1d1d1d;
+  text-align: center;
+  font-size: 24px;
+}
+
+.calib-card .count {
+  font-size: 72px;
+  font-weight: 700;
+  color: #00e5ff;
 }
 
 /* ---- Gaze dot ---- */

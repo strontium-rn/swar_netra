@@ -29,6 +29,8 @@ export const IRIS_LOOK_HEAD: FeatureSet = {
   curved: ['irisX', 'irisY'],
 }
 
+export const FEATURE_SETS = [IRIS_ONLY, IRIS_LOOK_HEAD]
+
 // Mean and spread of each feature, used to rescale all features to similar sizes.
 // Without this, a feature measured in big numbers would dominate small ones.
 type Scale = { mean: Record<FeatureName, number>; std: Record<FeatureName, number> }
@@ -59,7 +61,21 @@ export class GazeModel {
     const t = terms(f, this.set, this.scale)
     return { x: dot(t, this.wx), y: dot(t, this.wy) }
   }
+
+  // Saving and loading: a trained model is just numbers (weights + scale),
+  // so it can be stored as plain JSON text and rebuilt later without recalibrating.
+  toJSON(): SavedModel {
+    return { set: this.set.name, wx: this.wx, wy: this.wy, scale: this.scale }
+  }
+
+  static fromJSON(saved: SavedModel): GazeModel {
+    const set = FEATURE_SETS.find((s) => s.name === saved.set)
+    if (!set) throw new Error(`Unknown feature set: ${saved.set}`)
+    return new GazeModel(set, saved.wx, saved.wy, saved.scale)
+  }
 }
+
+export type SavedModel = { set: string; wx: number[]; wy: number[]; scale: Scale }
 
 // The formula's terms, e.g. for IRIS_ONLY:
 //   [1, irisX, irisY, open, irisX², irisY², irisX·irisY]

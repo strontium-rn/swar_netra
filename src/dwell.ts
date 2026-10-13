@@ -1,47 +1,65 @@
 // Pipeline box 6: Dwell selection.
 // Job: decide when the user has "clicked" a button with their eyes.
 // Looking at something isn't the same as choosing it (the "Midas touch" problem),
-// so a button is chosen only after the gaze stays on it for DWELL_MS.
+// so a button is chosen only after the gaze has stayed on it for long enough.
+//
+// "Leaky bucket": each button has a bucket that fills while you look at it and
+// slowly drains while you don't. A shaky gaze that keeps slipping off for a moment
+// still fills the bucket overall, instead of restarting from zero every time.
+// (The same idea is used on servers to limit how many requests a user can send.)
 
-export const DWELL_MS = 1200 // how long to look at a button to choose it
-const GRACE_MS = 300 // a blink or a short jitter off the button doesn't reset the timer
+export const DWELL_MS = 1200 // looking time needed to choose a button
+const DRAIN_RATE = 0.6 // buckets empty at 60% of the speed they fill
+const UNLOCK_MS = 400 // how long you must look away before the same word can be chosen again
 
 export class DwellSelector {
-  private current: string | null = null // button currently being looked at
-  private startMs = 0 // when the gaze arrived on it
-  private lastSeenMs = 0 // last time the gaze was on it
+  private buckets = new Map<string, number>() // ms of looking collected per button
   private locked: string | null = null // just chosen: must look away before it can be chosen again
+  private awayMs = 0 // how long the gaze has been off the locked button, without interruption
+  private lastMs: number | null = null
 
   // Call once per frame with the id of the button under the gaze (or null).
-  // Returns the button's id on the frame its dwell completes, otherwise null.
+  // Returns the button's id on the frame its bucket becomes full, otherwise null.
   update(target: string | null, now: number): string | null {
-    // The lock is released as soon as the gaze is anywhere else.
-    if (this.locked !== null && target !== this.locked) this.locked = null
+    const dt = this.lastMs === null ? 0 : Math.min(now - this.lastMs, 100) // cap: ignore long pauses
+    this.lastMs = now
+
+    // The lock is released only after a REAL look-away. A single jittery frame
+    // on the neighbor isn't enough, or a child staring at a word would hear it repeated.
+    if (this.locked !== null) {
+      this.awayMs = target === this.locked ? 0 : this.awayMs + dt
+      if (this.awayMs >= UNLOCK_MS) this.locked = null
+    }
     if (target === this.locked) target = null
 
-    if (target !== null && target === this.current) {
-      this.lastSeenMs = now // still looking at the same button
-    } else if (target !== null) {
-      // Gaze moved to a different button: start timing that one.
-      this.current = target
-      this.startMs = now
-      this.lastSeenMs = now
-    } else if (this.current !== null && now - this.lastSeenMs > GRACE_MS) {
-      this.current = null // gaze has really left (not just a blink)
+    // Drain every other bucket, fill the one being looked at.
+    for (const [id, ms] of this.buckets) {
+      if (id !== target) this.buckets.set(id, Math.max(0, ms - dt * DRAIN_RATE))
     }
+    if (target === null) return null
+    const filled = (this.buckets.get(target) ?? 0) + dt
+    this.buckets.set(target, filled)
 
-    if (this.current !== null && now - this.startMs >= DWELL_MS) {
-      const chosen = this.current
-      this.locked = chosen
-      this.current = null
-      return chosen
+    if (filled >= DWELL_MS) {
+      this.buckets.clear() // start fresh after a choice
+      this.locked = target
+      this.awayMs = 0
+      return target
     }
     return null
   }
 
-  // How far the current dwell has progressed (0..1), for drawing the fill animation.
-  progress(now: number): { id: string; fraction: number } | null {
-    if (this.current === null) return null
-    return { id: this.current, fraction: Math.min(1, (now - this.startMs) / DWELL_MS) }
+  // The fullest bucket (0..1), for drawing the fill animation.
+  progress(): { id: string; fraction: number } | null {
+    let best: { id: string; fraction: number } | null = null
+    for (const [id, ms] of this.buckets) {
+      if (ms > 0 && (!best || ms / DWELL_MS > best.fraction)) best = { id, fraction: ms / DWELL_MS }
+    }
+    return best
+  }
+
+  reset(): void {
+    this.buckets.clear()
+    this.locked = null
   }
 }

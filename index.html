@@ -7,14 +7,8 @@
     <title>Swar Netra</title>
   </head>
   <body>
-    <!-- View 1: setup (before calibration) -->
-    <div id="setup">
-      <button id="calibrate" disabled>Calibrate</button>
-      <div id="status">Loading…</div>
-    </div>
-
-    <!-- View 2: the communication board (after calibration) -->
-    <div id="board" hidden>
+    <!-- The communication board: always on screen -->
+    <div id="board">
       <header id="board-top">
         <!-- The last chosen word, shown big so others in the room can read it too -->
         <div id="message">
@@ -23,11 +17,16 @@
         </div>
         <!-- Controls for the caregiver (used with the mouse, not the eyes) -->
         <div id="caregiver">
-          <button id="recalibrate">Recalibrate</button>
-          <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
-          <label><input type="checkbox" id="show-dot" checked /> Gaze dot</label>
+          <div class="row">
+            <button id="recalibrate">Recalibrate</button>
+            <button id="fullscreen">Full screen</button>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
+            <label><input type="checkbox" id="show-dot" /> Gaze dot</label>
+          </div>
           <details>
-            <summary>Accuracy</summary>
+            <summary id="accuracy">Not calibrated yet</summary>
             <div id="report"></div>
           </details>
         </div>
@@ -36,16 +35,30 @@
       <main id="words"></main>
     </div>
 
+    <!-- Welcome card shown before the first calibration -->
+    <div id="welcome">
+      <div class="card">
+        <h1>Swar Netra</h1>
+        <p id="status">Loading…</p>
+        <ul>
+          <li>Face the screen with light on your face (not behind you).</li>
+          <li>During calibration, follow the ⭐ with your eyes only.</li>
+          <li>Afterwards, look at a word for about a second to say it.</li>
+        </ul>
+        <button id="calibrate" disabled>Start calibration</button>
+      </div>
+    </div>
+
     <!-- Small camera preview, top-right. The canvas sits exactly on top of the video. -->
     <div id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
 
-    <!-- Full-screen layer where the calibration dots appear -->
+    <!-- Layer over the board where the calibration star and countdown appear -->
     <div id="calib-layer" hidden></div>
 
-    <!-- Shows where the system thinks you're looking -->
+    <!-- Shows where the system thinks you're looking (off by default) -->
     <div id="gaze-dot" hidden></div>
 
     <script type="module" src="/src/main.ts"></script>

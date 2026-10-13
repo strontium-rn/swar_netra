@@ -1,47 +1,58 @@
-// Evaluation: measure how good a gaze model is, using test dots it has never seen.
+// Evaluation: measure how good a gaze model is, on test spots recorded after calibration.
 //
-// Eye-tracking quality has two separate parts:
-//   accuracy  = on average, how far the estimate is from where you really looked (aim)
-//   jitter    = how much the estimate shakes while you stare at one spot (steadiness)
-// A model can be accurate but shaky, or steady but aimed wrong, so we measure both.
+// The number that matters most for the board is the HIT RATE: while you look at a word,
+// what % of the time does the system think you're on that same word?
+// We also keep the eye-tracking classics:
+//   aim error = how far the average estimate is from the true spot
+//   jitter    = how much the estimate shakes while you stare at one spot
 
 import { COLLECT_MS, type Recording } from './calibration.ts'
 import type { GazeModel, ScreenPoint } from './gazeModel.ts'
 import { GazeSmoother } from './smoothing.ts'
 
-// All numbers are percentages of the screen (10 = a tenth of the screen).
-export type Score = { name: string; errX: number; errY: number; jitter: number; jitterSmoothed: number }
+// All numbers are percentages.
+export type Score = {
+  name: string
+  hitRate: number // % of frames on the right word, averaged over all words
+  hitByWord: Record<string, number> // the same, per word
+  errX: number // % of screen width
+  errY: number // % of screen height
+  jitter: number // % of screen, after smoothing
+}
 
-export function scoreModel(model: GazeModel, recordings: Recording[]): Score {
+// `wordAt` turns an x position into a word id: the same hit-testing the board uses.
+export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x: number) => string | null): Score {
   let errX = 0
   let errY = 0
   let jitter = 0
-  let jitterSmoothed = 0
+  const hitByWord: Record<string, number> = {}
 
   for (const r of recordings) {
-    const raw = r.frames.map((f) => model.predict(f))
+    // Replay the estimates through the smoother, as the live board does.
+    // Skip the first quarter: the filter needs a moment to settle onto the spot.
+    const smoother = new GazeSmoother()
+    const dt = COLLECT_MS / 1000 / r.frames.length
+    const smoothed = r.frames.map((f) => smoother.smooth(model.predict(f), dt))
+    const settled = smoothed.slice(Math.floor(smoothed.length / 4))
 
-    // Accuracy: average all estimates for this dot, then compare with the true spot.
-    const m = mean(raw)
+    const hits = settled.filter((p) => wordAt(p.x) === r.target.id).length
+    hitByWord[r.target.id] = (hits / settled.length) * 100
+
+    const m = mean(settled)
     errX += Math.abs(m.x - r.target.x)
     errY += Math.abs(m.y - r.target.y)
-    jitter += spread(raw)
-
-    // Replay the same estimates through the smoother to see how much it calms them.
-    // Skip the first quarter: the filter needs a moment to settle onto the dot.
-    const smoother = new GazeSmoother()
-    const dt = COLLECT_MS / 1000 / raw.length
-    const smoothed = raw.map((p) => smoother.smooth(p, dt))
-    jitterSmoothed += spread(smoothed.slice(Math.floor(smoothed.length / 4)))
+    jitter += spread(settled)
   }
 
   const n = recordings.length
+  const hitValues = Object.values(hitByWord)
   return {
     name: model.set.name,
+    hitRate: hitValues.reduce((s, v) => s + v, 0) / hitValues.length,
+    hitByWord,
     errX: (errX / n) * 100,
     errY: (errY / n) * 100,
     jitter: (jitter / n) * 100,
-    jitterSmoothed: (jitterSmoothed / n) * 100,
   }
 }
 
