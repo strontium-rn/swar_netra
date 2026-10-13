@@ -6,9 +6,29 @@
 //   aim error = how far the average estimate is from the true spot
 //   jitter    = how much the estimate shakes while you stare at one spot
 
-import { COLLECT_MS, type Recording } from './calibration.ts'
-import type { GazeModel, ScreenPoint } from './gazeModel.ts'
+import { COLLECT_MS, toSamples, type Recording } from './calibration.ts'
+import { GazeModel, type FeatureSet, type ScreenPoint } from './gazeModel.ts'
 import { GazeSmoother } from './smoothing.ts'
+
+// Cross-validation ("leave one spot out"): hide one calibration spot, train on the rest,
+// and check the prediction at the hidden spot. Repeat for every spot and average.
+// Each spot is tested by a model that never saw it, so a recipe that only memorizes
+// its training spots (overfitting) scores badly here even if it fits them perfectly.
+// Returns the average aim error in % of the screen.
+export function crossValidate(recordings: Recording[], set: FeatureSet): { errX: number; errY: number } {
+  const usable = recordings.filter((r) => r.frames.length > 0) // a spot can be empty if the face was lost
+  let errX = 0
+  let errY = 0
+  for (let i = 0; i < usable.length; i++) {
+    const training = usable.filter((_, j) => j !== i)
+    const model = GazeModel.fit(toSamples(training), set)
+    const held = usable[i]
+    const m = mean(held.frames.map((f) => model.predict(f)))
+    errX += Math.abs(m.x - held.target.x)
+    errY += Math.abs(m.y - held.target.y)
+  }
+  return { errX: (errX / usable.length) * 100, errY: (errY / usable.length) * 100 }
+}
 
 // All numbers are percentages.
 export type Score = {
@@ -28,6 +48,10 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
   const hitByWord: Record<string, number> = {}
 
   for (const r of recordings) {
+    if (r.frames.length < 4) {
+      hitByWord[r.target.id] = 0 // face was lost here: count it as a miss
+      continue
+    }
     // Replay the estimates through the smoother, as the live board does.
     // Skip the first quarter: the filter needs a moment to settle onto the spot.
     const smoother = new GazeSmoother()
@@ -36,7 +60,7 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
     const settled = smoothed.slice(Math.floor(smoothed.length / 4))
 
     const hits = settled.filter((p) => wordAt(p.x) === r.target.id).length
-    hitByWord[r.target.id] = (hits / settled.length) * 100
+    hitByWord[r.target.id] = settled.length ? (hits / settled.length) * 100 : 0
 
     const m = mean(settled)
     errX += Math.abs(m.x - r.target.x)
@@ -44,7 +68,7 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
     jitter += spread(settled)
   }
 
-  const n = recordings.length
+  const n = Math.max(1, recordings.filter((r) => r.frames.length >= 4).length) // spots actually scored
   const hitValues = Object.values(hitByWord)
   return {
     name: model.set.name,

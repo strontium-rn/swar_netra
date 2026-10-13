@@ -36,6 +36,27 @@ export async function countdown(layer: HTMLElement, message: string): Promise<vo
   }
 }
 
+// A card with a message and some buttons; resolves with the index of the button clicked.
+// Used for the quality gate ("Hungry wasn't detected well. Redo it?").
+export function ask(layer: HTMLElement, html: string, choices: string[]): Promise<number> {
+  layer.hidden = false
+  const card = document.createElement('div')
+  card.className = 'calib-card'
+  card.innerHTML = `<div>${html}</div><div class="choices"></div>`
+  layer.append(card)
+  return new Promise((resolve) => {
+    choices.forEach((label, i) => {
+      const button = document.createElement('button')
+      button.textContent = label
+      button.addEventListener('click', () => {
+        card.remove()
+        resolve(i)
+      })
+      card.querySelector('.choices')!.append(button)
+    })
+  })
+}
+
 export async function recordAtTargets(
   layer: HTMLElement,
   stream: FrameStream,

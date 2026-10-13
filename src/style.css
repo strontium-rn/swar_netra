@@ -324,3 +324,15 @@ label {
 #gaze-dot.paused {
   background: rgba(255, 160, 0, 0.6);
 }
+
+/* Quality-gate buttons inside a calibration card */
+.calib-card .choices {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.calib-card p {
+  margin: 8px 0;
+}

@@ -8,12 +8,11 @@ import { startCamera } from './camera.ts'
 import { LandmarkDetector, type FaceFrame } from './landmarks.ts'
 import { drawHeadGuide, drawPoints } from './debugView.ts'
 import { computeEyeFeatures } from './eyeFeatures.ts'
-import { countdown, recordAtTargets, toSamples, type Target } from './calibration.ts'
-import { FEATURE_SETS, GazeModel } from './gazeModel.ts'
+import { runCalibrationFlow, type CalibrationResult } from './calibrationFlow.ts'
+import { GazeModel, weightCount } from './gazeModel.ts'
 import { GazeSmoother } from './smoothing.ts'
-import { scoreModel, type Score } from './evaluate.ts'
 import { FrameStream } from './frameStream.ts'
-import { averagePose, driftMessage, headPose, type HeadPose } from './headGuard.ts'
+import { driftMessage, headPose, type HeadPose } from './headGuard.ts'
 import { Board } from './board.ts'
 import { DwellSelector } from './dwell.ts'
 import { speak } from './speech.ts'
@@ -43,7 +42,7 @@ const gazeDot = $<HTMLDivElement>('#gaze-dot')
 // avoids bugs like the board reacting to your eyes while you're calibrating.
 //   setup → calibrating → board  (and board → calibrating again on "Recalibrate")
 let mode: 'setup' | 'calibrating' | 'board' = 'setup'
-let xModel: GazeModel | null = null // predicts left/right (chosen by word hit rate)
+let xModel: GazeModel | null = null // predicts left/right (decides the word)
 let yModel: GazeModel | null = null // predicts up/down (only used for the gaze dot)
 let headRef: HeadPose | null = null // head position during calibration
 let lastFaceMs = -Infinity // when a face was last seen
@@ -68,12 +67,17 @@ async function main() {
   // A saved calibration means we can skip straight to the board.
   const saved = loadCalibration()
   if (saved) {
-    xModel = GazeModel.fromJSON(saved.xModel)
-    yModel = GazeModel.fromJSON(saved.yModel)
-    headRef = saved.headRef
-    accuracy.textContent = `Saved calibration · ${Math.round(saved.hitRate)}% hit rate`
-    report.innerHTML = `<p>Calibrated ${new Date(saved.savedAt).toLocaleString()}.<br>Recalibrate to see the full report.</p>`
-    enterBoard()
+    try {
+      xModel = GazeModel.fromJSON(saved.xModel)
+      yModel = GazeModel.fromJSON(saved.yModel)
+      headRef = saved.headRef
+      accuracy.textContent = `Saved calibration · ${Math.round(saved.hitRate)}% hit rate`
+      report.innerHTML = `<p>Calibrated ${new Date(saved.savedAt).toLocaleString()}.<br>Recalibrate to see the full report.</p>`
+      enterBoard()
+    } catch {
+      // Saved data from an older version of the app: ignore it and calibrate fresh.
+      xModel = yModel = headRef = null
+    }
   }
 
   let lastVideoTime = -1
@@ -184,47 +188,22 @@ async function calibrate() {
     await document.documentElement.requestFullscreen().catch(() => {})
     await new Promise((resolve) => setTimeout(resolve, 300)) // let the layout resize
 
-    // Spots on the word buttons: the center of each button at two heights.
-    // Snake order (left→right on top, right→left below) so the star never jumps far.
-    const cols = board.centers()
-    const at = (frac: number) => cols.map((c): Target => ({ id: c.id, x: c.x, y: c.top + frac * (c.bottom - c.top) }))
-    const calibrationTargets = [...at(0.25), ...at(0.75).reverse()]
-    const testTargets = at(0.5)
-
-    // Also record where the head is during calibration, for the head guard.
-    const poses: HeadPose[] = []
-    const stopPoses = stream.subscribe((info) => poses.push(info.pose))
-
-    // 1. Learn: train every recipe on the SAME data (a fair comparison).
-    await countdown(calibLayer, 'Follow the star with your eyes.<br>Keep your head still.')
-    const calibration = await recordAtTargets(calibLayer, stream, calibrationTargets)
-    const models = FEATURE_SETS.map((set) => GazeModel.fit(toSamples(calibration), set))
-
-    // 2. Test: one more look at each word.
-    await countdown(calibLayer, 'Quick test: follow the star once more.')
-    const test = await recordAtTargets(calibLayer, stream, testTargets)
-    stopPoses()
-    const scores = models.map((m) => scoreModel(m, test, board.nearestWord))
-
-    // 3. Left/right decides the word, so pick that model by HIT RATE.
-    //    Up/down only moves the gaze dot, so pick that one by aim error.
-    const bestX = argmax(scores.map((s) => s.hitRate - s.errX / 100)) // error breaks ties
-    const bestY = argmax(scores.map((s) => -s.errY))
-    xModel = models[bestX]
-    yModel = models[bestY]
-    headRef = averagePose(poses)
+    const result = await runCalibrationFlow(calibLayer, stream, board)
+    xModel = result.xModel
+    yModel = result.yModel
+    headRef = result.headRef
 
     saveCalibration({
       xModel: xModel.toJSON(),
       yModel: yModel.toJSON(),
       headRef,
-      hitRate: scores[bestX].hitRate,
+      hitRate: result.score.hitRate,
       savedAt: new Date().toISOString(),
     })
-    showReport(scores, bestX, bestY)
+    showReport(result)
     messageIcon.textContent = ''
     messageText.textContent =
-      scores[bestX].hitRate >= 75
+      result.score.hitRate >= 75
         ? 'Look at a word to say it'
         : 'Accuracy is low. Try more light on your face, then Recalibrate.'
     enterBoard()
@@ -239,34 +218,30 @@ calibrateBtn.addEventListener('click', calibrate)
 recalibrateBtn.addEventListener('click', calibrate)
 fullscreenBtn.addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}))
 
-function argmax(values: number[]): number {
-  return values.indexOf(Math.max(...values))
-}
-
-function showReport(scores: Score[], bestX: number, bestY: number) {
-  const best = scores[bestX]
-  accuracy.textContent = `Words hit ${Math.round(best.hitRate)}% of the time`
+function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
+  accuracy.textContent = `Words hit ${Math.round(score.hitRate)}% of the time`
 
   const pct = (v: number) => `${Math.round(v)}%`
   const used = (yes: boolean) => (yes ? ' class="used"' : '')
-  const rows = scores
+  const rows = candidates
     .map(
-      (s, i) => `<tr>
-        <td>${s.name}</td>
-        <td${used(i === bestX)}>${pct(s.hitRate)}</td>
-        <td${used(i === bestX)}>${s.errX.toFixed(1)}%</td>
-        <td${used(i === bestY)}>${s.errY.toFixed(1)}%</td>
-        <td>${s.jitter.toFixed(1)}%</td>
+      (c) => `<tr>
+        <td>${c.set.name}</td>
+        <td>${weightCount(c.set)}</td>
+        <td${used(c.set === xModel.set)}>${c.cvErrX.toFixed(1)}%</td>
+        <td${used(c.set === yModel.set)}>${c.cvErrY.toFixed(1)}%</td>
       </tr>`,
     )
     .join('')
-  const perWord = WORDS.map((w) => `${w.icon} ${pct(best.hitByWord[w.id] ?? 0)}`).join(' &nbsp; ')
-  report.innerHTML = `<table>
-    <tr><th>Model</th><th>Word hit rate</th><th>Aim error ↔</th><th>Aim error ↕</th><th>Jitter</th></tr>
+  const perWord = WORDS.map((w) => `${w.icon} ${pct(score.hitByWord[w.id] ?? 0)}`).join(' &nbsp; ')
+  report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, jitter ${score.jitter.toFixed(1)}%</p>
+  <p>Per word: ${perWord}</p>
+  <table>
+    <tr><th>Recipe</th><th>Weights</th><th>CV error ↔</th><th>CV error ↕</th></tr>
     ${rows}
   </table>
-  <p>Per word: ${perWord}</p>
-  <p class="muted">Highlighted = used. Hit rate = % of time the right word was under your gaze.</p>`
+  <p class="muted">CV error = aim error on spots the recipe never trained on (% of screen).<br>
+  Highlighted = used. Among near-equal recipes, the simplest wins.</p>`
 }
 
 main().catch((err) => {
