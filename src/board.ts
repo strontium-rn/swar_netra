@@ -3,7 +3,15 @@
 // and show the "looking", dwell-fill and "chosen" visuals.
 // It only DISPLAYS pages; deciding which page to show is main.ts's job.
 
-export type TileView = { id: string; label: string; icon: string; color: string }
+export type TileView = {
+  id: string
+  label: string
+  icon: string
+  color: string
+  // For a category: the words inside it, shown small on the button so the user
+  // can see what's in there before choosing it, instead of guessing.
+  preview?: { icon: string; label: string }[]
+}
 
 // Debouncing: to switch to another button, the gaze must stay in that button's column
 // for this long. A gaze sitting on a border flickers back and forth faster than this, so
@@ -34,6 +42,11 @@ export class Board {
         el.className = 'word'
         el.style.setProperty('--color', tile.color)
         el.innerHTML = `<span class="icon">${tile.icon}</span><span class="label">${tile.label}</span>`
+        if (tile.preview) {
+          el.classList.add('category')
+          el.innerHTML += `<span class="preview-icons">${tile.preview.map((w) => w.icon).join('')}</span>
+            <span class="preview-words">${tile.preview.map((w) => w.label).join(' · ')}</span>`
+        }
       } else {
         el.className = 'word empty'
       }

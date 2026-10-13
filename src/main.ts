@@ -56,7 +56,16 @@ const board = new Board($<HTMLElement>('#words'))
 // Show a page of the board. The button that lands under the gaze is locked until
 // the user looks away, so a page change never selects something by accident.
 function showPage(next: PageId) {
-  const tiles = pageTiles(next).map((t) => t && { id: t.id, label: t.label, icon: t.icon, color: tileColor(t, next) })
+  const tiles = pageTiles(next).map(
+    (t) =>
+      t && {
+        id: t.id,
+        label: t.label,
+        icon: t.icon,
+        color: tileColor(t, next),
+        preview: t.kind === 'category' ? t.words.map((w) => ({ icon: w.icon, label: w.label })) : undefined,
+      },
+  )
   dwell.reset(board.setPage(tiles))
   const category = next === 'home' ? null : findTile(next)
   pageTitle.textContent = category ? `${category.icon} ${category.label}` : ''

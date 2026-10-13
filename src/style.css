@@ -231,6 +231,34 @@ label {
   font-size: min(5vh, 2.8vw); /* 6 columns: keep long labels like "Food & drink" readable */
 }
 
+/* Category buttons: slightly smaller main icon to make room for the preview. */
+.word.category {
+  gap: 2vh;
+}
+
+.word.category .icon {
+  font-size: 11vh;
+}
+
+/* Pictures of the words inside the category */
+.word .preview-icons {
+  font-size: min(4.2vh, 2.3vw);
+  letter-spacing: 0.1em;
+  padding: 0.6vh 1vw;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Small word list for readers and caregivers */
+.word .preview-words {
+  padding: 0 1vw;
+  text-align: center;
+  font-size: min(2vh, 1.15vw);
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
 /* An empty column: visible, but nothing to select there. */
 .word.empty {
   background: transparent;
