@@ -15,8 +15,16 @@ export type Target = ScreenPoint & { id: string }
 // Everything recorded while looking at one spot.
 export type Recording = { target: Target; frames: EyeFeatures[] }
 
-export const SETTLE_MS = 800 // eyes need time to jump to the new spot and settle; ignore this part
-export const COLLECT_MS = 1000 // then record for this long
+// Timing for each spot. People react at different speeds (a child, a grandparent), so
+// instead of guessing when the eyes have arrived, we record a longer stretch and then
+// KEEP the steadiest part of it: that's where the eyes were resting on the star.
+const SETTLE_MS = 400 // the eyes are certainly still jumping during this part: skip it
+const LOOK_MS = 1600 // then record for this long...
+export const COLLECT_MS = 800 // ...and keep the steadiest stretch of this length
+
+// A spot whose data is much shakier than the others (or mostly blinks) is redone once
+// automatically, at the end of the run, so one bad moment doesn't spoil the calibration.
+const SHAKY = 2.5 // "much shakier" = this many times the typical spot's shake
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -68,34 +76,48 @@ export async function recordAtTargets(
   star.textContent = '⭐'
   layer.append(star)
 
-  const recordings: Recording[] = []
   try {
-    for (const target of targets) {
-      star.style.left = `${target.x * 100}%`
-      star.style.top = `${target.y * 100}%`
-      star.classList.remove('collecting')
-      await wait(SETTLE_MS)
+    const recordings: Recording[] = []
+    for (const target of targets) recordings.push(await recordSpot(star, stream, target))
 
-      // Shrinking the star while recording pulls the eye to its exact center.
-      star.classList.add('collecting')
-      const frames: EyeFeatures[] = []
-      const unsubscribe = stream.subscribe((info) => frames.push(info.features))
-      await wait(COLLECT_MS)
-      unsubscribe()
-
-      recordings.push({ target, frames: dropOutliers(dropBlinks(frames)) })
+    // Quality check: redo spots that came out much worse than the rest.
+    const typical = median(recordings.map(shake))
+    const typicalCount = median(recordings.map((r) => r.frames.length))
+    for (let i = 0; i < recordings.length; i++) {
+      const r = recordings[i]
+      if (shake(r) <= typical * SHAKY && r.frames.length >= typicalCount / 2) continue
+      const again = await recordSpot(star, stream, r.target)
+      if (again.frames.length >= r.frames.length / 2 && shake(again) < shake(r)) recordings[i] = again
     }
+
+    const total = recordings.reduce((sum, r) => sum + r.frames.length, 0)
+    if (total < targets.length * 10) {
+      throw new Error("Couldn't see your eyes well enough. Check lighting and face the camera.")
+    }
+    return recordings
   } finally {
     // `finally` runs even if something above throws, so the screen is always cleaned up.
     star.remove()
     layer.hidden = true
   }
+}
 
-  const total = recordings.reduce((sum, r) => sum + r.frames.length, 0)
-  if (total < targets.length * 10) {
-    throw new Error("Couldn't see your eyes well enough. Check lighting and face the camera.")
-  }
-  return recordings
+// Show the star at one spot and record the eyes looking at it.
+async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target): Promise<Recording> {
+  star.style.left = `${target.x * 100}%`
+  star.style.top = `${target.y * 100}%`
+  star.classList.remove('collecting')
+  await wait(SETTLE_MS)
+
+  // Shrinking the star while recording pulls the eye to its exact center.
+  star.classList.add('collecting')
+  const frames: Timed[] = []
+  const unsubscribe = stream.subscribe((info) => frames.push({ t: performance.now(), f: info.features }))
+  await wait(LOOK_MS)
+  unsubscribe()
+
+  const steady = steadiest(dropBlinks(frames))
+  return { target, frames: dropOutliers(steady.map((x) => x.f)) }
 }
 
 // Flatten recordings into the (features, target) pairs the model trains on.
@@ -112,11 +134,47 @@ const median = (values: number[]) => {
 
 // A blink makes the eye features jump around, which would teach the model wrong examples.
 // Blinks show up as eyelids much more closed than usual, so we drop those frames.
-function dropBlinks(fs: EyeFeatures[]): EyeFeatures[] {
+function dropBlinks(fs: Timed[]): Timed[] {
   if (fs.length === 0) return fs
-  const m = median(fs.map((f) => f.open))
-  return fs.filter((f) => f.open > m * 0.7)
+  const m = median(fs.map((x) => x.f.open))
+  return fs.filter((x) => x.f.open > m * 0.7)
 }
+
+// A frame plus the time it arrived (ms).
+type Timed = { t: number; f: EyeFeatures }
+
+// Slide a COLLECT_MS-long window over the recording and keep the window where the iris
+// moved least. Before the eyes arrive (or during a glance away) the iris is moving, so
+// those parts are shaky and get skipped. A slow looker's data is kept from later on;
+// a fast looker's from earlier. No timing guess needed.
+function steadiest(fs: Timed[]): Timed[] {
+  if (fs.length < 5) return fs
+  let best = fs
+  let bestShake = Infinity
+  for (let i = 0; i < fs.length; i++) {
+    const end = fs[i].t + COLLECT_MS
+    if (end > fs[fs.length - 1].t + 1) break // window would run past the end of the recording
+    const window = fs.filter((x) => x.t >= fs[i].t && x.t < end)
+    if (window.length < 5) continue
+    const s = spread(window.map((x) => x.f))
+    if (s < bestShake) {
+      bestShake = s
+      best = window
+    }
+  }
+  return best
+}
+
+// How much the iris wandered while looking at one spot (standard deviation, both directions).
+function spread(fs: EyeFeatures[]): number {
+  const sd = (vs: number[]) => {
+    const m = vs.reduce((a, b) => a + b, 0) / vs.length
+    return Math.sqrt(vs.reduce((a, v) => a + (v - m) ** 2, 0) / vs.length)
+  }
+  return Math.hypot(sd(fs.map((f) => f.irisX)), sd(fs.map((f) => f.irisY)))
+}
+
+const shake = (r: Recording) => (r.frames.length < 5 ? Infinity : spread(r.frames))
 
 // While looking at ONE spot, most frames should look alike. Frames that are far from
 // the typical one are probably a glance away or a tracking glitch, so we drop them.

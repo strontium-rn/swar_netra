@@ -26,6 +26,7 @@ export type CalibrationResult = {
   headRef: HeadPose
   candidates: Candidate[]
   score: Score // word test result for the x model
+  recordings: { calibration: Recording[]; test: Recording[] } // raw data, for "Save data"
 }
 
 type Column = ReturnType<Board['centers']>[number]
@@ -90,7 +91,43 @@ export async function runCalibrationFlow(
       headRef: averagePose(poses),
       candidates,
       score,
+      recordings: { calibration, test },
     }
+  } finally {
+    stopPoses()
+  }
+}
+
+// "Quick fix" (drift correction): 3 looks instead of a full calibration.
+// After the head shifts a little, the models are still the right SHAPE, just off by a
+// constant amount. We measure that amount at 3 words and shift the models back.
+// The head position during these looks becomes the new reference for the head guard.
+export async function runQuickFix(
+  layer: HTMLElement,
+  stream: FrameStream,
+  board: Board,
+  xModel: GazeModel,
+  yModel: GazeModel,
+): Promise<{ xModel: GazeModel; yModel: GazeModel; headRef: HeadPose }> {
+  const cols = board.centers()
+  const spots = [cols[0], cols[Math.floor(cols.length / 2)], cols[cols.length - 1]]
+  const poses: HeadPose[] = []
+  const stopPoses = stream.subscribe((info) => poses.push(info.pose))
+  try {
+    await countdown(layer, 'Quick fix: look at the star 3 times.')
+    const recs = (await recordAtTargets(layer, stream, spots.map((c) => wordTarget(c, 0.5)))).filter((r) => r.frames.length > 0)
+    // Average miss over all frames: how far off the models are now.
+    let dx = 0
+    let dy = 0
+    let n = 0
+    for (const r of recs) {
+      for (const f of r.frames) {
+        dx += r.target.x - xModel.predict(f).x
+        dy += r.target.y - yModel.predict(f).y
+        n++
+      }
+    }
+    return { xModel: xModel.shifted(dx / n, 0), yModel: yModel.shifted(0, dy / n), headRef: averagePose(poses) }
   } finally {
     stopPoses()
   }

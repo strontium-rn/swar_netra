@@ -68,6 +68,16 @@ export class GazeModel {
     return { x: dot(t, this.wx), y: dot(t, this.wy) }
   }
 
+  // A copy of this model whose answers are all moved by (dx, dy). Used by "Quick fix":
+  // when the head has shifted a little since calibration, every estimate is off by about
+  // the same amount, so we measure that amount and subtract it. The first weight belongs
+  // to the constant term (always 1), so adding to it shifts every prediction.
+  shifted(dx: number, dy: number): GazeModel {
+    const wx = [this.wx[0] + dx, ...this.wx.slice(1)]
+    const wy = [this.wy[0] + dy, ...this.wy.slice(1)]
+    return new GazeModel(this.set, wx, wy, this.scale)
+  }
+
   // Saving and loading: a trained model is just numbers (weights + scale),
   // so it can be stored as plain JSON text and rebuilt later without recalibrating.
   toJSON(): SavedModel {

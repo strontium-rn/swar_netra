@@ -8,7 +8,7 @@ import { startCamera } from './camera.ts'
 import { LandmarkDetector, type FaceFrame } from './landmarks.ts'
 import { drawHeadGuide, drawPoints } from './debugView.ts'
 import { computeEyeFeatures } from './eyeFeatures.ts'
-import { runCalibrationFlow, type CalibrationResult } from './calibrationFlow.ts'
+import { runCalibrationFlow, runQuickFix, type CalibrationResult } from './calibrationFlow.ts'
 import { GazeModel, weightCount } from './gazeModel.ts'
 import { GazeSmoother } from './smoothing.ts'
 import { FrameStream } from './frameStream.ts'
@@ -26,6 +26,8 @@ const welcome = $<HTMLDivElement>('#welcome')
 const status = $<HTMLParagraphElement>('#status')
 const calibrateBtn = $<HTMLButtonElement>('#calibrate')
 const recalibrateBtn = $<HTMLButtonElement>('#recalibrate')
+const quickFixBtn = $<HTMLButtonElement>('#quickfix')
+const saveDataBtn = $<HTMLButtonElement>('#save-data')
 const fullscreenBtn = $<HTMLButtonElement>('#fullscreen')
 const smoothToggle = $<HTMLInputElement>('#smooth')
 const showDotToggle = $<HTMLInputElement>('#show-dot')
@@ -47,6 +49,8 @@ let xModel: GazeModel | null = null // predicts left/right (decides the word)
 let yModel: GazeModel | null = null // predicts up/down (only used for the gaze dot)
 let headRef: HeadPose | null = null // head position during calibration
 let lastFaceMs = -Infinity // when a face was last seen
+let lastResult: CalibrationResult | null = null // this session's calibration, for "Save data"
+let savedHitRate = 0
 
 const stream = new FrameStream()
 const smoother = new GazeSmoother()
@@ -91,6 +95,7 @@ async function main() {
       xModel = GazeModel.fromJSON(saved.xModel)
       yModel = GazeModel.fromJSON(saved.yModel)
       headRef = saved.headRef
+      savedHitRate = saved.hitRate
       accuracy.textContent = `Saved calibration · ${Math.round(saved.hitRate)}% hit rate`
       report.innerHTML = `<p>Calibrated ${new Date(saved.savedAt).toLocaleString()}.<br>Recalibrate to see the full report.</p>`
       enterBoard()
@@ -220,15 +225,11 @@ async function calibrate() {
     xModel = result.xModel
     yModel = result.yModel
     headRef = result.headRef
-
-    saveCalibration({
-      xModel: xModel.toJSON(),
-      yModel: yModel.toJSON(),
-      headRef,
-      hitRate: result.score.hitRate,
-      savedAt: new Date().toISOString(),
-    })
+    lastResult = result
+    savedHitRate = result.score.hitRate
+    persist()
     showReport(result)
+    saveDataBtn.hidden = false
     messageIcon.textContent = ''
     messageText.textContent =
       result.score.hitRate >= 75
@@ -243,7 +244,66 @@ async function calibrate() {
   }
 }
 
+function persist() {
+  if (!xModel || !yModel || !headRef) return
+  saveCalibration({
+    xModel: xModel.toJSON(),
+    yModel: yModel.toJSON(),
+    headRef,
+    hitRate: savedHitRate,
+    savedAt: new Date().toISOString(),
+  })
+}
+
+// Quick fix: 3 looks to correct small drift, instead of a full recalibration.
+async function quickFix() {
+  if (!xModel || !yModel) return calibrate() // nothing to fix yet
+  mode = 'calibrating'
+  gazeDot.hidden = true
+  headWarning.hidden = true
+  showPage('home')
+  board.show(null, null, 0)
+  try {
+    const fixed = await runQuickFix(calibLayer, stream, board, xModel, yModel)
+    xModel = fixed.xModel
+    yModel = fixed.yModel
+    headRef = fixed.headRef
+    persist()
+    messageIcon.textContent = ''
+    messageText.textContent = 'Fixed. Look at a word to say it'
+  } catch (err) {
+    messageText.textContent = `Quick fix failed: ${(err as Error).message}`
+  }
+  enterBoard()
+}
+
+// Download the raw calibration data as a file. It's only numbers (eye measurements and
+// star positions), no video or images, so it can be shared to diagnose problems.
+function saveData() {
+  if (!lastResult) return
+  const { recordings, candidates, score, xModel: xm, yModel: ym } = lastResult
+  const data = {
+    app: 'swar-netra',
+    savedAt: new Date().toISOString(),
+    screen: { width: window.innerWidth, height: window.innerHeight },
+    columns: board.centers(),
+    chosen: { x: xm.set.name, y: ym.set.name },
+    candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY })),
+    score,
+    headRef,
+    recordings,
+  }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swar-netra-calibration-${data.savedAt.slice(0, 19).replace(/:/g, '-')}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 calibrateBtn.addEventListener('click', calibrate)
+quickFixBtn.addEventListener('click', quickFix)
+saveDataBtn.addEventListener('click', saveData)
 recalibrateBtn.addEventListener('click', calibrate)
 fullscreenBtn.addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}))
 
