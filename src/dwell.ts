@@ -58,8 +58,11 @@ export class DwellSelector {
     return best
   }
 
-  reset(): void {
+  // Start fresh, e.g. after a page change. `lock` = a button that must not be chosen
+  // until the gaze has looked away from it (the button now sitting under the gaze).
+  reset(lock: string | null = null): void {
     this.buckets.clear()
-    this.locked = null
+    this.locked = lock
+    this.awayMs = 0
   }
 }

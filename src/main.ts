@@ -16,7 +16,7 @@ import { driftMessage, headPose, type HeadPose } from './headGuard.ts'
 import { Board } from './board.ts'
 import { DwellSelector } from './dwell.ts'
 import { speak } from './speech.ts'
-import { WORDS } from './vocabulary.ts'
+import { findTile, pageTiles, tileColor, type PageId } from './vocabulary.ts'
 import { loadCalibration, saveCalibration } from './storage.ts'
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -34,6 +34,7 @@ const report = $<HTMLDivElement>('#report')
 const headWarning = $<HTMLDivElement>('#head-warning')
 const messageIcon = $<HTMLSpanElement>('#message-icon')
 const messageText = $<HTMLSpanElement>('#message-text')
+const pageTitle = $<HTMLDivElement>('#page-title')
 const calibLayer = $<HTMLDivElement>('#calib-layer')
 const gazeDot = $<HTMLDivElement>('#gaze-dot')
 
@@ -50,7 +51,24 @@ let lastFaceMs = -Infinity // when a face was last seen
 const stream = new FrameStream()
 const smoother = new GazeSmoother()
 const dwell = new DwellSelector()
-const board = new Board($<HTMLElement>('#words'), WORDS)
+const board = new Board($<HTMLElement>('#words'))
+
+// After a word is spoken, wait this long (so the flash is visible), then return home.
+// Every message then starts from the same place, which helps motor planning.
+const RETURN_HOME_MS = 700
+
+let page: PageId = 'home'
+
+// Show a page of the board. The button that lands under the gaze is locked until
+// the user looks away, so a page change never selects something by accident.
+function showPage(next: PageId) {
+  page = next
+  const tiles = pageTiles(next).map((t) => t && { id: t.id, label: t.label, icon: t.icon, color: tileColor(t, next) })
+  dwell.reset(board.setPage(tiles))
+  const category = next === 'home' ? null : findTile(next)
+  pageTitle.textContent = category ? `${category.icon} ${category.label}` : ''
+}
+showPage('home')
 
 async function main() {
   status.textContent = 'Starting camera…'
@@ -154,12 +172,24 @@ function updateBoard(target: string | null, now: number) {
   const progress = dwell.progress()
   board.show(target, progress?.id ?? null, progress?.fraction ?? 0)
 
-  if (chosen) {
-    const word = WORDS.find((w) => w.id === chosen)!
-    board.flash(chosen)
-    messageIcon.textContent = word.icon
-    messageText.textContent = word.label
-    speak(word.speak)
+  if (!chosen) return
+  const tile = findTile(chosen)
+  if (!tile) return
+  if (tile.kind === 'category') {
+    showPage(tile.id) // open the category
+  } else if (tile.kind === 'back') {
+    showPage('home')
+  } else {
+    // A word: flash it, show it big for the listener, and say it.
+    board.flash(tile.id)
+    messageIcon.textContent = tile.icon
+    messageText.textContent = tile.label
+    speak(tile.speak)
+    if (page !== 'home') {
+      setTimeout(() => {
+        if (mode === 'board') showPage('home')
+      }, RETURN_HOME_MS)
+    }
   }
 }
 
@@ -180,7 +210,7 @@ async function calibrate() {
   welcome.hidden = true
   gazeDot.hidden = true
   headWarning.hidden = true
-  dwell.reset()
+  showPage('home') // calibrate on the home page
   board.show(null, null, 0)
   try {
     // Full screen, so the board looks exactly as it will be used. The browser only
@@ -206,6 +236,7 @@ async function calibrate() {
       result.score.hitRate >= 75
         ? 'Look at a word to say it'
         : 'Accuracy is low. Try more light on your face, then Recalibrate.'
+    showPage('home')
     enterBoard()
   } catch (err) {
     mode = 'setup'
@@ -233,7 +264,9 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
       </tr>`,
     )
     .join('')
-  const perWord = WORDS.map((w) => `${w.icon} ${pct(score.hitByWord[w.id] ?? 0)}`).join(' &nbsp; ')
+  const perWord = Object.entries(score.hitByWord)
+    .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}`)
+    .join(' &nbsp; ')
   report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
   <table>

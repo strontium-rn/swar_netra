@@ -1,18 +1,140 @@
 // The words on the board. This is DATA, kept separate from the code that displays it,
-// so a caregiver or therapist could change words without touching any logic.
+// so a caregiver or therapist can change words without touching any logic.
+//
+// Structure (a small tree):
+//   home page → tiles that are either a WORD (speaks) or a CATEGORY (opens a page)
+//   category page → [Back] + its words
+//
+// Positions never change: Back is always far left, each word always in the same column.
+// Children learn WHERE a word is, so "Food → Water" becomes an automatic eye movement
+// ("motor planning"). Rearranging buttons would break that learning.
 
 export type Word = {
+  kind: 'word'
   id: string // unique name used inside the code
   label: string // text shown on the button
-  icon: string // picture shown on the button (many children recognize pictures before words)
-  speak: string // what the computer says out loud; could be a full sentence, e.g. "I need the toilet"
-  color: string // button background
+  icon: string // picture shown on the button (children recognize pictures before words)
+  speak: string // what is said out loud; can be a short sentence
+  audio?: string // (coming next) id of a caregiver's voice recording; if missing, the computer voice speaks
 }
 
-export const WORDS: Word[] = [
-  { id: 'toilet', label: 'Toilet', icon: '🚽', speak: 'Toilet', color: '#2f6fd6' },
-  { id: 'hungry', label: 'Hungry', icon: '🍽️', speak: 'Hungry', color: '#c9631a' },
-  { id: 'thirsty', label: 'Thirsty', icon: '💧', speak: 'Thirsty', color: '#11899c' },
-  { id: 'happy', label: 'Happy', icon: '😊', speak: 'Happy', color: '#3c9a3f' },
-  { id: 'sad', label: 'Sad', icon: '😢', speak: 'Sad', color: '#7a4fc4' },
+export type Category = {
+  kind: 'category'
+  id: string
+  label: string
+  icon: string
+  color: string // every word in a category shares its color, which helps visual search
+  words: Word[]
+}
+
+export type Back = { kind: 'back'; id: 'back'; label: string; icon: string }
+
+export type Tile = Word | Category | Back
+
+// Every page has this many columns, so button positions stay the same everywhere.
+export const COLUMNS = 6
+
+const word = (id: string, label: string, icon: string, speak = label): Word => ({ kind: 'word', id, label, icon, speak })
+
+export const HELP: Word = word('help', 'Help', '🆘', 'I need help')
+export const HELP_COLOR = '#c62828'
+export const BACK: Back = { kind: 'back', id: 'back', label: 'Back', icon: '⬅️' }
+export const BACK_COLOR = '#455a64'
+
+export const CATEGORIES: Category[] = [
+  {
+    kind: 'category',
+    id: 'quick',
+    label: 'Quick talk',
+    icon: '💬',
+    color: '#2f6fd6',
+    words: [
+      word('yes', 'Yes', '👍'),
+      word('no', 'No', '👎'),
+      word('more', 'More', '➕'),
+      word('all-done', 'All done', '✅'),
+      word('stop', 'Stop', '✋'),
+    ],
+  },
+  {
+    kind: 'category',
+    id: 'food',
+    label: 'Food & drink',
+    icon: '🍎',
+    color: '#c9631a',
+    words: [
+      word('hungry', 'Hungry', '🍽️', "I'm hungry"),
+      word('thirsty', 'Thirsty', '🥤', "I'm thirsty"),
+      word('water', 'Water', '💧'),
+      word('snack', 'Snack', '🍪'),
+      word('fruit', 'Fruit', '🍌'),
+    ],
+  },
+  {
+    kind: 'category',
+    id: 'feelings',
+    label: 'Feelings',
+    icon: '😊',
+    color: '#3c9a3f',
+    words: [
+      word('happy', 'Happy', '😊', "I'm happy"),
+      word('sad', 'Sad', '😢', "I'm sad"),
+      word('angry', 'Angry', '😠', "I'm angry"),
+      word('scared', 'Scared', '😨', "I'm scared"),
+      word('tired', 'Tired', '😴', "I'm tired"),
+    ],
+  },
+  {
+    kind: 'category',
+    id: 'activities',
+    label: 'Activities',
+    icon: '🧩',
+    color: '#7a4fc4',
+    words: [
+      word('play', 'Play', '🧸', 'I want to play'),
+      word('music', 'Music', '🎵'),
+      word('outside', 'Outside', '🌳', 'I want to go outside'),
+      word('book', 'Book', '📖'),
+      word('tablet', 'Tablet', '📱'),
+    ],
+  },
+  {
+    kind: 'category',
+    id: 'body',
+    label: 'Body & needs',
+    icon: '🚽',
+    color: '#11899c',
+    words: [
+      word('toilet', 'Toilet', '🚽', 'I need the toilet'),
+      word('hurts', 'It hurts', '🤕'),
+      word('sleep', 'Sleep', '🛏️', 'I want to sleep'),
+      word('too-loud', 'Too loud', '🔊', "It's too loud"),
+      word('break', 'Break', '⏸️', 'I need a break'),
+    ],
+  },
 ]
+
+// Help sits on the home page so it takes ONE look, not two: urgent messages must be fast.
+export const HOME: Tile[] = [HELP, ...CATEGORIES]
+
+export type PageId = 'home' | string // 'home' or a category id
+
+// The tiles shown on a page, in column order. `null` = an empty column (nothing to select).
+export function pageTiles(page: PageId): (Tile | null)[] {
+  const tiles: Tile[] = page === 'home' ? HOME : [BACK, ...(CATEGORIES.find((c) => c.id === page)?.words ?? [])]
+  return Array.from({ length: COLUMNS }, (_, i) => tiles[i] ?? null)
+}
+
+// The button color for a tile on a given page.
+export function tileColor(tile: Tile, page: PageId): string {
+  if (tile.kind === 'back') return BACK_COLOR
+  if (tile.kind === 'category') return tile.color
+  if (tile.id === HELP.id) return HELP_COLOR
+  return CATEGORIES.find((c) => c.id === page)?.color ?? '#555'
+}
+
+// Look up any tile by id (for labels in reports and messages).
+export function findTile(id: string): Tile | undefined {
+  if (id === BACK.id) return BACK
+  return HOME.find((t) => t.id === id) ?? CATEGORIES.flatMap((c) => c.words).find((w) => w.id === id)
+}

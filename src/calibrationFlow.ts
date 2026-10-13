@@ -3,7 +3,7 @@
 //      between words, and both edges), so the model learns the full left-to-right range.
 //   2. Choose: cross-validation picks the recipe that works best on spots it never saw.
 //   3. Test: one look at each word, scored by hit rate.
-//   4. Quality gate: words below GATE % can be redone, instead of shipping a bad board.
+//   4. Quality gate: buttons below GATE % can be redone, instead of shipping a bad board.
 //   5. Final model: trained on ALL the data (sweep + test) with the chosen recipe.
 
 import type { Board } from './board.ts'
@@ -12,7 +12,7 @@ import { crossValidate, scoreModel, type Score } from './evaluate.ts'
 import type { FrameStream } from './frameStream.ts'
 import { FEATURE_SETS, GazeModel, weightCount, type FeatureSet } from './gazeModel.ts'
 import { averagePose, type HeadPose } from './headGuard.ts'
-import { WORDS } from './vocabulary.ts'
+import { findTile } from './vocabulary.ts'
 
 const GATE = 70 // a word must be hit at least this % of the time
 const MAX_REDOS = 2 // don't loop forever if a word just won't work today
@@ -62,22 +62,21 @@ export async function runCalibrationFlow(
       score = scoreModel(GazeModel.fit(toSamples(calibration), xSet), test, board.nearestWord)
 
       // 4. Quality gate.
-      const weak = WORDS.filter((w) => (score.hitByWord[w.id] ?? 0) < GATE)
+      const weak = cols.filter((c) => (score.hitByWord[c.id] ?? 0) < GATE)
       if (weak.length === 0 || round === MAX_REDOS) break
-      const names = weak.map((w) => `${w.icon} ${w.label}`).join(', ')
+      const names = weak.map((c) => `${findTile(c.id)?.icon ?? ''} ${findTile(c.id)?.label ?? c.id}`).join(', ')
       const choice = await ask(
         layer,
         `<p>${names} ${weak.length === 1 ? "wasn't" : "weren't"} detected well.</p>
-         <p class="muted">Redoing them adds a few more practice looks at just those pictures.</p>`,
-        ['Redo those words', 'Use anyway'],
+         <p class="muted">Redoing them adds a few more practice looks at just those buttons.</p>`,
+        ['Redo those buttons', 'Use anyway'],
       )
       if (choice === 1) break
 
-      // Extra practice on the weak words only (two heights each), then re-test them.
-      const weakCols = cols.filter((c) => weak.some((w) => w.id === c.id))
+      // Extra practice on the weak buttons only (two heights each), then re-test them.
       await countdown(layer, 'A few more looks. Follow the star.')
-      calibration.push(...(await recordAtTargets(layer, stream, weakCols.flatMap((c) => [wordTarget(c, 0.3), wordTarget(c, 0.7)]))))
-      const retest = await recordAtTargets(layer, stream, weakCols.map((c) => wordTarget(c, 0.5)))
+      calibration.push(...(await recordAtTargets(layer, stream, weak.flatMap((c) => [wordTarget(c, 0.3), wordTarget(c, 0.7)]))))
+      const retest = await recordAtTargets(layer, stream, weak.map((c) => wordTarget(c, 0.5)))
       test = test.map((r) => retest.find((n) => n.target.id === r.target.id) ?? r)
     }
 

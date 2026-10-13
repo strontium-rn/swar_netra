@@ -105,6 +105,7 @@ label {
 }
 
 #board-top {
+  position: relative;
   height: 22vh;
   display: flex;
   align-items: center;
@@ -223,6 +224,26 @@ label {
 
 .word .icon {
   font-size: 14vh;
+}
+
+.word .label {
+  text-align: center;
+  font-size: min(5vh, 2.8vw); /* 6 columns: keep long labels like "Food & drink" readable */
+}
+
+/* An empty column: visible, but nothing to select there. */
+.word.empty {
+  background: transparent;
+  border: 3px dashed #333;
+}
+
+/* Which category page we're on, top-left of the header. */
+#page-title {
+  position: absolute;
+  top: 12px;
+  left: 32px;
+  font-size: 20px;
+  color: #aaa;
 }
 
 .word > span {
