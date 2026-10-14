@@ -314,7 +314,7 @@ function saveData() {
     screen: { width: window.innerWidth, height: window.innerHeight },
     columns: board.centers(),
     chosen: { x: xm.set.name, y: ym.set.name },
-    candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY })),
+    candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY, testHit: c.test.hitRate, testErrX: c.testErrX })),
     score,
     headRef,
     recordings,
@@ -343,6 +343,8 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
       (c) => `<tr>
         <td>${c.set.name}</td>
         <td>${weightCount(c.set)}</td>
+        <td${used(c.set === xModel.set)}>${pct(c.test.hitRate)}</td>
+        <td${used(c.set === xModel.set)}>${c.testErrX.toFixed(1)}%</td>
         <td${used(c.set === xModel.set)}>${c.cvErrX.toFixed(1)}%</td>
         <td${used(c.set === yModel.set)}>${c.cvErrY.toFixed(1)}%</td>
       </tr>`,
@@ -356,12 +358,13 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
   report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
   <table>
-    <tr><th>Recipe</th><th>Weights</th><th>CV error ↔</th><th>CV error ↕</th></tr>
+    <tr><th>Recipe</th><th>Weights</th><th>Test hits</th><th>Test error ↔</th><th>CV error ↔</th><th>CV error ↕</th></tr>
     ${rows}
   </table>
   <p class="muted">← / → = which way the estimate leans on that button.<br>
   CV error = RMS aim error on spots the recipe never trained on (% of screen).<br>
-  Highlighted = used. Among near-equal recipes, the simplest wins.</p>`
+  Test = the word test (one look at each button, edges included).<br>
+  Left/right recipe: most test hits first, then lowest average of test + CV error; simplest if close.</p>`
 }
 
 main().catch((err) => {

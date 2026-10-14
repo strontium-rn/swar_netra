@@ -1,8 +1,9 @@
 // The full calibration process, start to finish:
 //   1. Sweep: a star visits 11 spots across the whole width (word centers, the gaps
 //      between words, and both edges), so the model learns the full left-to-right range.
-//   2. Choose: cross-validation picks the recipe that works best on spots it never saw.
-//   3. Test: one look at each word, scored by hit rate.
+//   2. Test: one look at each word.
+//   3. Choose: the recipe that hits the most words in the test; among equally good ones, the
+//      lowest error over two "exams" (cross-validation + the word test), simplest if close.
 //   4. Quality gate: buttons below GATE % can be redone, instead of shipping a bad board.
 //   5. Final model: trained on ALL the data (sweep + test) with the chosen recipe.
 
@@ -18,7 +19,13 @@ const GATE = 70 // a word must be hit at least this % of the time
 const MAX_REDOS = 2 // don't loop forever if a word just won't work today
 const SIMPLER_IS_BETTER = 0.5 // % of screen: if a simpler recipe is this close, prefer it
 
-export type Candidate = { set: FeatureSet; cvErrX: number; cvErrY: number }
+export type Candidate = {
+  set: FeatureSet
+  cvErrX: number
+  cvErrY: number
+  test: Score // how this recipe did on the word test
+  testErrX: number // RMS aim error on the word test, % of screen width
+}
 
 export type CalibrationResult = {
   xModel: GazeModel // decides which word you're looking at
@@ -54,13 +61,21 @@ export async function runCalibrationFlow(
     let xSet: FeatureSet
     let score: Score
     for (let round = 0; ; round++) {
-      // 2. Choose recipes with cross-validation.
+      // 2. Score every recipe on cross-validation AND on the word test.
       candidates = FEATURE_SETS.map((set) => {
         const cv = crossValidate(calibration, set)
-        return { set, cvErrX: cv.errX, cvErrY: cv.errY }
+        const t = scoreModel(GazeModel.fit(toSamples(calibration), set), test, board.nearestWord)
+        return { set, cvErrX: cv.errX, cvErrY: cv.errY, test: t, testErrX: rms(Object.values(t.biasByWord)) }
       })
-      xSet = simplestGoodEnough(candidates, (c) => c.cvErrX)
-      score = scoreModel(GazeModel.fit(toSamples(calibration), xSet), test, board.nearestWord)
+      // Choose. Cross-validation alone isn't enough: it can only check spots BETWEEN other
+      // spots, so a straight-line recipe that misses the edge words can still look fine
+      // there. The word test checks the real buttons, edges included. So: first keep the
+      // recipes that hit the most words, then pick the lowest average of the two errors.
+      const bestHit = Math.max(...candidates.map((c) => c.test.hitRate))
+      const contenders = candidates.filter((c) => c.test.hitRate >= bestHit - 1)
+      const chosen = simplestGoodEnough(contenders, (c) => (c.cvErrX + c.testErrX) / 2)
+      xSet = chosen.set
+      score = chosen.test
 
       // 4. Quality gate.
       const weak = cols.filter((c) => (score.hitByWord[c.id] ?? 0) < GATE)
@@ -84,7 +99,7 @@ export async function runCalibrationFlow(
     // 5. Final models on all the data. The test has done its job (choosing and checking),
     //    so its recordings now become extra training examples.
     const all: Recording[] = [...calibration, ...test]
-    const ySet = simplestGoodEnough(candidates, (c) => c.cvErrY)
+    const ySet = simplestGoodEnough(candidates, (c) => c.cvErrY).set
     return {
       xModel: GazeModel.fit(toSamples(all), xSet),
       yModel: GazeModel.fit(toSamples(all), ySet),
@@ -156,8 +171,11 @@ function wordTarget(c: Column, frac: number): Target {
 
 // "Occam's razor": among recipes whose error is within SIMPLER_IS_BETTER of the best,
 // pick the one with the fewest weights. Simpler models break less on new data.
-function simplestGoodEnough(candidates: Candidate[], error: (c: Candidate) => number): FeatureSet {
+function simplestGoodEnough(candidates: Candidate[], error: (c: Candidate) => number): Candidate {
   const best = Math.min(...candidates.map(error))
   const good = candidates.filter((c) => error(c) <= best + SIMPLER_IS_BETTER)
-  return good.reduce((a, b) => (weightCount(b.set) < weightCount(a.set) ? b : a)).set
+  return good.reduce((a, b) => (weightCount(b.set) < weightCount(a.set) ? b : a))
 }
+
+// Root mean square: like an average, but big misses count extra.
+const rms = (vs: number[]) => Math.sqrt(vs.reduce((s, v) => s + v * v, 0) / Math.max(1, vs.length))
