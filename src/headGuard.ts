@@ -28,7 +28,7 @@ export const BOARD_LIMITS: Limits = {
 }
 // In good calibrations the head turned under 4° in total; in a bad one it followed the
 // star by 6°, so the eyes moved less and the model mixed up head and eye movement.
-export const CALIBRATION_LIMITS: Limits = { move: 0.036, size: 0.07, yaw: 0.045, pitch: 0.06 }
+export const CALIBRATION_LIMITS: Limits = { move: 0.036, size: 0.07, yaw: 0.07, pitch: 0.08 } // yaw 0.07 rad = 4°
 export const MOVE_LIMIT = BOARD_LIMITS.move // size of the circle on the camera preview
 
 export type HeadProblem = 'close' | 'far' | 'moved' | 'turned'
