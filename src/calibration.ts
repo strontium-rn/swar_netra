@@ -7,7 +7,7 @@
 
 import type { EyeFeatures } from './eyeFeatures.ts'
 import type { FrameStream } from './frameStream.ts'
-import { averagePose, driftMessage, type HeadPose } from './headGuard.ts'
+import { averagePose, CALIBRATION_LIMITS, headProblem, type HeadPose, type HeadProblem } from './headGuard.ts'
 import type { Sample, ScreenPoint } from './gazeModel.ts'
 
 // A spot to look at. `id` is the word button it sits on.
@@ -32,7 +32,12 @@ const SHAKY = 2.5 // "much shakier" = this many times the typical spot's shake
 // teaches different lessons than the first and the model learns a blurry average.
 // So calibration is stricter than the board: frames with the head out of place are thrown
 // away, and the star waits until the head is back.
-const CALIB_STRICT = 0.6 // limits are 60% of the board's
+const HEAD_MESSAGES: Record<HeadProblem, string> = {
+  close: 'Too close: lean back a little',
+  far: 'Too far: come a little closer',
+  moved: 'Head moved: move back to where you started',
+  turned: 'Move only your eyes: keep your head facing the middle of the screen',
+}
 const HEAD_WAIT_MAX_MS = 8000 // don't wait forever: carry on, the quality checks will notice
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -137,7 +142,7 @@ async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target
   star.classList.add('collecting')
   const frames: Timed[] = []
   const unsubscribe = stream.subscribe((info) => {
-    if (head && driftMessage(head, info.pose, info.aspect, CALIB_STRICT)) return // head out of place: skip
+    if (head && headProblem(head, info.pose, info.aspect, CALIBRATION_LIMITS)) return // head out of place: skip
     frames.push({ t: performance.now(), f: info.features })
   })
   await wait(LOOK_MS)
@@ -150,11 +155,11 @@ async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target
 // If the head has moved away, hide the star and tell the user how to get back, until the
 // head has been back in place for a moment.
 async function waitForHead(layer: HTMLElement, star: HTMLElement, stream: FrameStream, head: HeadPose): Promise<void> {
-  let message: string | null = null
+  let problem: HeadProblem | null = null
   let okSince = performance.now()
   const stop = stream.subscribe((info) => {
-    message = driftMessage(head, info.pose, info.aspect, CALIB_STRICT)
-    if (message) okSince = performance.now()
+    problem = headProblem(head, info.pose, info.aspect, CALIBRATION_LIMITS)
+    if (problem) okSince = performance.now()
   })
   const card = document.createElement('div')
   card.className = 'calib-card'
@@ -162,11 +167,9 @@ async function waitForHead(layer: HTMLElement, star: HTMLElement, stream: FrameS
   try {
     await wait(100) // collect a few frames first
     while (performance.now() - okSince < 300 && performance.now() - start < HEAD_WAIT_MAX_MS) {
-      if (message) {
+      if (problem) {
         star.hidden = true
-        // There's no circle on screen during calibration, so point to the start position instead.
-        const text = (message as string).replace('bring your nose back into the circle', 'move back to where you started')
-        card.innerHTML = `<p>${text}</p><p class="muted">Then keep still, and the star will come back.</p>`
+        card.innerHTML = `<p>${HEAD_MESSAGES[problem as HeadProblem]}</p><p class="muted">Then keep still, and the star will come back.</p>`
         if (!card.isConnected) layer.append(card)
       }
       await wait(100)

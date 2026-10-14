@@ -20,6 +20,7 @@ import { speak } from './speech.ts'
 import { findTile, pageTiles, tileColor, type PageId } from './vocabulary.ts'
 import { loadCalibration, saveCalibration } from './storage.ts'
 import { enableOffline } from './offline.ts'
+import { NoiseMeter, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!
 const video = $<HTMLVideoElement>('#video')
@@ -31,6 +32,7 @@ const recalibrateBtn = $<HTMLButtonElement>('#recalibrate')
 const quickFixBtn = $<HTMLButtonElement>('#quickfix')
 const saveDataBtn = $<HTMLButtonElement>('#save-data')
 const driftInfo = $<HTMLSpanElement>('#drift-info')
+const signalInfo = $<HTMLSpanElement>('#signal-info')
 const fullscreenBtn = $<HTMLButtonElement>('#fullscreen')
 const smoothToggle = $<HTMLInputElement>('#smooth')
 const showDotToggle = $<HTMLInputElement>('#show-dot')
@@ -59,6 +61,7 @@ const stream = new FrameStream()
 const smoother = new GazeSmoother()
 const dwell = new DwellSelector()
 const drift = new DriftTracker()
+const noiseMeter = new NoiseMeter()
 const board = new Board($<HTMLElement>('#words'))
 let centers: number[] = [] // x of each button center, for the drift tracker
 const updateCenters = () => (centers = board.centers().map((c) => c.x))
@@ -137,6 +140,7 @@ async function main() {
 // Everything that happens for one camera frame.
 function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: number) {
   if (frame) lastFaceMs = now
+  if (!frame) noiseMeter.gap()
   if (mode === 'setup') updateFaceCheck(now)
 
   if (!frame) {
@@ -150,6 +154,8 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
   }
 
   const features = computeEyeFeatures(frame, aspect)
+  noiseMeter.push(features.irisX, now)
+  showSignal()
   const pose = headPose(frame, aspect)
   stream.publish({ features, pose, aspect })
 
@@ -180,13 +186,28 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
 
 // Before calibrating, make sure the camera can see the face. Starting without a face
 // would only produce a bad calibration, so the button stays disabled until then.
+// It also checks the eye signal: calibrating in poor conditions gives a poor board, and
+// no amount of clever math afterwards can fix data the camera couldn't see clearly.
+// (Only a warning, not a block: the caregiver may have no better light available.)
 function updateFaceCheck(now: number) {
   const faceOk = now - lastFaceMs < 500
   calibrateBtn.disabled = !faceOk
-  status.textContent = faceOk
-    ? '✓ Face found. Sit comfortably about an arm’s length from the screen.'
-    : 'Looking for your face… Make sure it is well lit and in the middle of the camera.'
-  status.classList.toggle('ok', faceOk)
+  const noise = noiseMeter.noise()
+  const level = noise === null ? null : signalLevel(noise)
+  status.textContent = !faceOk
+    ? 'Looking for your face… Make sure it is well lit and in the middle of the camera.'
+    : level === 'poor'
+      ? `⚠ Face found, but the camera can't see your eyes clearly. ${SIGNAL_ADVICE}`
+      : '✓ Face found. Sit comfortably about an arm’s length from the screen.'
+  status.classList.toggle('ok', faceOk && level !== 'poor')
+}
+
+// Live eye-signal quality for the caregiver panel.
+let shownSignal = ''
+function showSignal() {
+  const noise = noiseMeter.noise()
+  const text = noise === null ? '…' : signalLevel(noise)
+  if (text !== shownSignal) signalInfo.textContent = shownSignal = text
 }
 
 // Dwell → fill animation → (when complete) speak.
@@ -314,6 +335,7 @@ function saveData() {
     screen: { width: window.innerWidth, height: window.innerHeight },
     columns: board.centers(),
     chosen: { x: xm.set.name, y: ym.set.name },
+    noise: lastResult.noise,
     candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY, testHit: c.test.hitRate, testErrX: c.testErrX })),
     score,
     headRef,
@@ -333,7 +355,7 @@ saveDataBtn.addEventListener('click', saveData)
 recalibrateBtn.addEventListener('click', calibrate)
 fullscreenBtn.addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}))
 
-function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
+function showReport({ candidates, score, xModel, yModel, noise }: CalibrationResult) {
   accuracy.textContent = `Words hit ${Math.round(score.hitRate)}% of the time`
 
   const pct = (v: number) => `${Math.round(v)}%`
@@ -355,7 +377,11 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
   const perWord = Object.entries(score.hitByWord)
     .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}${lean(score.biasByWord[id])}`)
     .join(' &nbsp; ')
-  report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, ${pct(score.stressHit)} under stress, jitter ${score.jitter.toFixed(1)}%</p>
+  const level = signalLevel(noise)
+  report.innerHTML = `<p><b>Eye signal during calibration:</b> ${level} (noise ${(noise * 10000).toFixed(1)}; good is under 3)${
+    level === 'poor' ? `<br>⚠ ${SIGNAL_ADVICE} Then recalibrate.` : ''
+  }</p>
+  <p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, ${pct(score.stressHit)} under stress, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
   <table>
     <tr><th>Recipe</th><th>Weights</th><th>Test hits (stress)</th><th>Test error ↔</th><th>CV error ↔</th><th>CV error ↕</th></tr>

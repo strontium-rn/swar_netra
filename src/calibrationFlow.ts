@@ -15,6 +15,7 @@ import type { FrameStream } from './frameStream.ts'
 import { FEATURE_SETS, GazeModel, weightCount, type FeatureSet } from './gazeModel.ts'
 import { averagePose, type HeadPose } from './headGuard.ts'
 import { findTile } from './vocabulary.ts'
+import { recordingNoise, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
 const GATE = 70 // a word must be hit at least this % of the time
 const MAX_REDOS = 2 // don't loop forever if a word just won't work today
@@ -35,6 +36,7 @@ export type CalibrationResult = {
   candidates: Candidate[]
   score: Score // word test result for the x model
   recordings: { calibration: Recording[]; test: Recording[] } // raw data, for "Save data"
+  noise: number // eye signal noise during calibration (see signalQuality.ts)
 }
 
 type Column = ReturnType<Board['centers']>[number]
@@ -54,11 +56,12 @@ export async function runCalibrationFlow(
     await countdown(layer, 'Follow the star with your eyes.<br>Keep your head still.')
     // Remember where the head is now: if it moves during calibration, recording pauses.
     const head = await measureHead(stream)
-    const calibration = await recordAtTargets(layer, stream, sweepTargets(cols), head)
+    const calibration = await recordAtTargets(layer, stream, shuffle(sweepTargets(cols)), head)
 
     // 3. Test each word.
     await countdown(layer, 'Quick test: look at the star on each picture.')
-    let test = await recordAtTargets(layer, stream, cols.map((c) => wordTarget(c, 0.5)), head)
+    let test = await recordAtTargets(layer, stream, shuffle(cols.map((c) => wordTarget(c, 0.5))), head)
+    test.sort((a, b) => a.target.x - b.target.x) // back to left-to-right, for the report
 
     let candidates: Candidate[] = []
     let xSet: FeatureSet
@@ -86,10 +89,16 @@ export async function runCalibrationFlow(
       const weak = cols.filter((c) => (score.hitByWord[c.id] ?? 0) < GATE)
       if (weak.length === 0 || round === MAX_REDOS) break
       const names = weak.map((c) => `${findTile(c.id)?.icon ?? ''} ${findTile(c.id)?.label ?? c.id}`).join(', ')
+      // If the camera saw the eyes poorly, more practice won't fix it: say what will.
+      const noisy = signalLevel(recordingNoise([...calibration, ...test])) === 'poor'
       const choice = await ask(
         layer,
         `<p>${names} ${weak.length === 1 ? "wasn't" : "weren't"} detected well.</p>
-         <p class="muted">Redoing them adds a few more practice looks at just those buttons.</p>`,
+         <p class="muted">${
+           noisy
+             ? `The camera can't see your eyes clearly. ${SIGNAL_ADVICE} Then choose Redo.`
+             : 'Redoing them adds a few more practice looks at just those buttons.'
+         }</p>`,
         ['Redo those buttons', 'Use anyway'],
       )
       if (choice === 1) break
@@ -112,6 +121,7 @@ export async function runCalibrationFlow(
       candidates,
       score,
       recordings: { calibration, test },
+      noise: recordingNoise(all),
     }
   } finally {
     stopPoses()
@@ -155,7 +165,7 @@ export async function runQuickFix(
 
 // 11 spots: each word center, the gaps between words, and both outer edges.
 // Heights alternate between the upper and lower part of the buttons, so up/down
-// also gets some variety. Ordered left to right so the star glides smoothly.
+// also gets some variety. (The flow shuffles their order.)
 function sweepTargets(cols: Column[]): Target[] {
   const spacing = (cols[cols.length - 1].x - cols[0].x) / (cols.length - 1)
   const xs: number[] = []
@@ -180,6 +190,18 @@ function simplestGoodEnough(candidates: Candidate[], error: (c: Candidate) => nu
   const best = Math.min(...candidates.map(error))
   const good = candidates.filter((c) => error(c) <= best + SIMPLER_IS_BETTER)
   return good.reduce((a, b) => (weightCount(b.set) < weightCount(a.set) ? b : a))
+}
+
+// Random order. Visiting spots left-to-right ties position to time: the head slowly drifts
+// (or follows the star) during the sweep, and the model then mistakes that drift for part
+// of the eye-to-screen mapping. In random order, drift becomes noise that averages out.
+function shuffle<T>(items: T[]): T[] {
+  const a = [...items]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
 }
 
 // Root mean square: like an average, but big misses count extra.

@@ -16,10 +16,22 @@ export type HeadPose = {
 const NOSE_TIP = 1
 const OUTER_EYE_CORNERS = [33, 263]
 
-// How much drift is allowed. These are first guesses, tune them by testing.
-export const MOVE_LIMIT = 0.06 // nose movement, as a fraction of the image height
-const SIZE_LIMIT = 0.12 // 12% closer or farther
-const TURN_LIMIT = 0.15 // head rotation in radians (about 9°)
+// How much drift is allowed. The board is relaxed (the user should be comfortable), while
+// calibration is strict: the model learns "eyes like this = that spot" for ONE head
+// position, so the data must come from (nearly) the same position.
+export type Limits = { move: number; size: number; yaw: number; pitch: number }
+export const BOARD_LIMITS: Limits = {
+  move: 0.06, // nose movement, as a fraction of the image height
+  size: 0.12, // 12% closer or farther
+  yaw: 0.15, // head rotation in radians (about 9°)
+  pitch: 0.15,
+}
+// In good calibrations the head turned under 4° in total; in a bad one it followed the
+// star by 6°, so the eyes moved less and the model mixed up head and eye movement.
+export const CALIBRATION_LIMITS: Limits = { move: 0.036, size: 0.07, yaw: 0.045, pitch: 0.06 }
+export const MOVE_LIMIT = BOARD_LIMITS.move // size of the circle on the camera preview
+
+export type HeadProblem = 'close' | 'far' | 'moved' | 'turned'
 
 export function headPose(frame: FaceFrame, aspect: number): HeadPose {
   const nose = frame.points[NOSE_TIP]
@@ -38,18 +50,24 @@ export function averagePose(poses: HeadPose[]): HeadPose {
   return { x: avg('x'), y: avg('y'), size: avg('size'), yaw: avg('yaw'), pitch: avg('pitch') }
 }
 
-// Returns a message telling the user how to fix their position, or null if it's fine.
-// `strict` < 1 shrinks all the limits (used during calibration, where data must be clean).
-export function driftMessage(ref: HeadPose, now: HeadPose, aspect: number, strict = 1): string | null {
-  if (now.size > ref.size * (1 + SIZE_LIMIT * strict)) return 'Too close: lean back a little'
-  if (now.size < ref.size * (1 - SIZE_LIMIT * strict)) return 'Too far: come a little closer'
+// What's wrong with the head position compared to `ref`, or null if it's fine.
+export function headProblem(ref: HeadPose, now: HeadPose, aspect: number, limits: Limits): HeadProblem | null {
+  if (now.size > ref.size * (1 + limits.size)) return 'close'
+  if (now.size < ref.size * (1 - limits.size)) return 'far'
   // x is multiplied by the aspect ratio so x and y distances use the same unit.
-  if (Math.hypot((now.x - ref.x) * aspect, now.y - ref.y) > MOVE_LIMIT * strict) {
-    return 'Head moved: bring your nose back into the circle'
-  }
-  const turn = TURN_LIMIT * strict
-  if (Math.abs(now.yaw - ref.yaw) > turn || Math.abs(now.pitch - ref.pitch) > turn) {
-    return 'Head turned: face the screen like during calibration'
-  }
+  if (Math.hypot((now.x - ref.x) * aspect, now.y - ref.y) > limits.move) return 'moved'
+  if (Math.abs(now.yaw - ref.yaw) > limits.yaw || Math.abs(now.pitch - ref.pitch) > limits.pitch) return 'turned'
   return null
+}
+
+// On the board: a message telling the user how to fix their position, or null if it's fine.
+const BOARD_MESSAGES: Record<HeadProblem, string> = {
+  close: 'Too close: lean back a little',
+  far: 'Too far: come a little closer',
+  moved: 'Head moved: bring your nose back into the circle',
+  turned: 'Head turned: face the screen like during calibration',
+}
+export function driftMessage(ref: HeadPose, now: HeadPose, aspect: number): string | null {
+  const problem = headProblem(ref, now, aspect, BOARD_LIMITS)
+  return problem && BOARD_MESSAGES[problem]
 }
