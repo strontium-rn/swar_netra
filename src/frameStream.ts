@@ -5,7 +5,7 @@
 import type { EyeFeatures } from './eyeFeatures.ts'
 import type { HeadPose } from './headGuard.ts'
 
-export type FrameInfo = { features: EyeFeatures; pose: HeadPose }
+export type FrameInfo = { features: EyeFeatures; pose: HeadPose; aspect: number }
 type Listener = (info: FrameInfo) => void
 
 export class FrameStream {

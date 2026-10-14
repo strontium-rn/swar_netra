@@ -39,14 +39,16 @@ export function averagePose(poses: HeadPose[]): HeadPose {
 }
 
 // Returns a message telling the user how to fix their position, or null if it's fine.
-export function driftMessage(ref: HeadPose, now: HeadPose, aspect: number): string | null {
-  if (now.size > ref.size * (1 + SIZE_LIMIT)) return 'Too close: lean back a little'
-  if (now.size < ref.size * (1 - SIZE_LIMIT)) return 'Too far: come a little closer'
+// `strict` < 1 shrinks all the limits (used during calibration, where data must be clean).
+export function driftMessage(ref: HeadPose, now: HeadPose, aspect: number, strict = 1): string | null {
+  if (now.size > ref.size * (1 + SIZE_LIMIT * strict)) return 'Too close: lean back a little'
+  if (now.size < ref.size * (1 - SIZE_LIMIT * strict)) return 'Too far: come a little closer'
   // x is multiplied by the aspect ratio so x and y distances use the same unit.
-  if (Math.hypot((now.x - ref.x) * aspect, now.y - ref.y) > MOVE_LIMIT) {
+  if (Math.hypot((now.x - ref.x) * aspect, now.y - ref.y) > MOVE_LIMIT * strict) {
     return 'Head moved: bring your nose back into the circle'
   }
-  if (Math.abs(now.yaw - ref.yaw) > TURN_LIMIT || Math.abs(now.pitch - ref.pitch) > TURN_LIMIT) {
+  const turn = TURN_LIMIT * strict
+  if (Math.abs(now.yaw - ref.yaw) > turn || Math.abs(now.pitch - ref.pitch) > turn) {
     return 'Head turned: face the screen like during calibration'
   }
   return null

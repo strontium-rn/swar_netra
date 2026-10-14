@@ -45,10 +45,17 @@ export function crossValidate(recordings: Recording[], set: FeatureSet): { errX:
 }
 
 // All numbers are percentages.
+// Stress test: in real use the estimate drifts a little, so a word that was "hit" with its
+// estimate sitting right next to the border will soon be missed. Pushing every estimate
+// a bit left (and then right) and re-checking reveals how much safety margin there is.
+// A shaky (high jitter) or leaning (biased) recipe fails it, a steady centered one passes.
+export const STRESS = 0.03 // 3% of the screen width
+
 export type Score = {
   name: string
   hitRate: number // % of frames on the right word, averaged over all words
   hitByWord: Record<string, number> // the same, per word
+  stressHit: number // hit rate when the estimate is pushed STRESS % left or right (worst of the two)
   biasByWord: Record<string, number> // which way each button's estimate leans: negative = left, positive = right
   errX: number // % of screen width
   errY: number // % of screen height
@@ -62,10 +69,12 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
   let jitter = 0
   const hitByWord: Record<string, number> = {}
   const biasByWord: Record<string, number> = {}
+  const stressByWord: Record<string, number> = {}
 
   for (const r of recordings) {
     if (r.frames.length < 4) {
       hitByWord[r.target.id] = 0 // face was lost here: count it as a miss
+      stressByWord[r.target.id] = 0
       continue
     }
     // Replay the estimates through the smoother, as the live board does.
@@ -77,6 +86,8 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
 
     const hits = settled.filter((p) => wordAt(p.x) === r.target.id).length
     hitByWord[r.target.id] = settled.length ? (hits / settled.length) * 100 : 0
+    const pushed = (shift: number) => settled.filter((p) => wordAt(p.x + shift) === r.target.id).length
+    stressByWord[r.target.id] = settled.length ? (Math.min(pushed(-STRESS), pushed(STRESS)) / settled.length) * 100 : 0
 
     const m = mean(settled)
     biasByWord[r.target.id] = (m.x - r.target.x) * 100
@@ -87,10 +98,12 @@ export function scoreModel(model: GazeModel, recordings: Recording[], wordAt: (x
 
   const n = Math.max(1, recordings.filter((r) => r.frames.length >= 4).length) // spots actually scored
   const hitValues = Object.values(hitByWord)
+  const stressValues = Object.values(stressByWord)
   return {
     name: model.set.name,
     hitRate: hitValues.reduce((s, v) => s + v, 0) / hitValues.length,
     hitByWord,
+    stressHit: stressValues.reduce((s, v) => s + v, 0) / stressValues.length,
     biasByWord,
     errX: (errX / n) * 100,
     errY: (errY / n) * 100,

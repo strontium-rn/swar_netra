@@ -7,6 +7,7 @@
 
 import type { EyeFeatures } from './eyeFeatures.ts'
 import type { FrameStream } from './frameStream.ts'
+import { averagePose, driftMessage, type HeadPose } from './headGuard.ts'
 import type { Sample, ScreenPoint } from './gazeModel.ts'
 
 // A spot to look at. `id` is the word button it sits on.
@@ -25,6 +26,14 @@ export const COLLECT_MS = 800 // ...and keep the steadiest stretch of this lengt
 // A spot whose data is much shakier than the others (or mostly blinks) is redone once
 // automatically, at the end of the run, so one bad moment doesn't spoil the calibration.
 const SHAKY = 2.5 // "much shakier" = this many times the typical spot's shake
+
+// Head check during calibration. The model learns "eyes like THIS = that spot", which is
+// only true for one head position. If the head moves halfway through, the second half
+// teaches different lessons than the first and the model learns a blurry average.
+// So calibration is stricter than the board: frames with the head out of place are thrown
+// away, and the star waits until the head is back.
+const CALIB_STRICT = 0.6 // limits are 60% of the board's
+const HEAD_WAIT_MAX_MS = 8000 // don't wait forever: carry on, the quality checks will notice
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -65,10 +74,21 @@ export function ask(layer: HTMLElement, html: string, choices: string[]): Promis
   })
 }
 
+// Where the head is right now, averaged over a short moment. Used as the calibration's
+// "home" position for the head check.
+export async function measureHead(stream: FrameStream, ms = 500): Promise<HeadPose | undefined> {
+  const poses: HeadPose[] = []
+  const stop = stream.subscribe((info) => poses.push(info.pose))
+  await wait(ms)
+  stop()
+  return poses.length ? averagePose(poses) : undefined
+}
+
 export async function recordAtTargets(
   layer: HTMLElement,
   stream: FrameStream,
   targets: Target[],
+  head?: HeadPose, // if given, only record while the head is near this position
 ): Promise<Recording[]> {
   layer.hidden = false
   const star = document.createElement('div')
@@ -78,7 +98,11 @@ export async function recordAtTargets(
 
   try {
     const recordings: Recording[] = []
-    for (const target of targets) recordings.push(await recordSpot(star, stream, target))
+    const spot = async (target: Target) => {
+      if (head) await waitForHead(layer, star, stream, head)
+      return recordSpot(star, stream, target, head)
+    }
+    for (const target of targets) recordings.push(await spot(target))
 
     // Quality check: redo spots that came out much worse than the rest.
     const typical = median(recordings.map(shake))
@@ -86,7 +110,7 @@ export async function recordAtTargets(
     for (let i = 0; i < recordings.length; i++) {
       const r = recordings[i]
       if (shake(r) <= typical * SHAKY && r.frames.length >= typicalCount / 2) continue
-      const again = await recordSpot(star, stream, r.target)
+      const again = await spot(r.target)
       if (again.frames.length >= r.frames.length / 2 && shake(again) < shake(r)) recordings[i] = again
     }
 
@@ -103,7 +127,7 @@ export async function recordAtTargets(
 }
 
 // Show the star at one spot and record the eyes looking at it.
-async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target): Promise<Recording> {
+async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target, head?: HeadPose): Promise<Recording> {
   star.style.left = `${target.x * 100}%`
   star.style.top = `${target.y * 100}%`
   star.classList.remove('collecting')
@@ -112,12 +136,46 @@ async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target
   // Shrinking the star while recording pulls the eye to its exact center.
   star.classList.add('collecting')
   const frames: Timed[] = []
-  const unsubscribe = stream.subscribe((info) => frames.push({ t: performance.now(), f: info.features }))
+  const unsubscribe = stream.subscribe((info) => {
+    if (head && driftMessage(head, info.pose, info.aspect, CALIB_STRICT)) return // head out of place: skip
+    frames.push({ t: performance.now(), f: info.features })
+  })
   await wait(LOOK_MS)
   unsubscribe()
 
   const steady = steadiest(dropBlinks(frames))
   return { target, frames: dropOutliers(steady.map((x) => x.f)) }
+}
+
+// If the head has moved away, hide the star and tell the user how to get back, until the
+// head has been back in place for a moment.
+async function waitForHead(layer: HTMLElement, star: HTMLElement, stream: FrameStream, head: HeadPose): Promise<void> {
+  let message: string | null = null
+  let okSince = performance.now()
+  const stop = stream.subscribe((info) => {
+    message = driftMessage(head, info.pose, info.aspect, CALIB_STRICT)
+    if (message) okSince = performance.now()
+  })
+  const card = document.createElement('div')
+  card.className = 'calib-card'
+  const start = performance.now()
+  try {
+    await wait(100) // collect a few frames first
+    while (performance.now() - okSince < 300 && performance.now() - start < HEAD_WAIT_MAX_MS) {
+      if (message) {
+        star.hidden = true
+        // There's no circle on screen during calibration, so point to the start position instead.
+        const text = (message as string).replace('bring your nose back into the circle', 'move back to where you started')
+        card.innerHTML = `<p>${text}</p><p class="muted">Then keep still, and the star will come back.</p>`
+        if (!card.isConnected) layer.append(card)
+      }
+      await wait(100)
+    }
+  } finally {
+    stop()
+    card.remove()
+    star.hidden = false
+  }
 }
 
 // Flatten recordings into the (features, target) pairs the model trains on.

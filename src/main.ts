@@ -151,7 +151,7 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
 
   const features = computeEyeFeatures(frame, aspect)
   const pose = headPose(frame, aspect)
-  stream.publish({ features, pose })
+  stream.publish({ features, pose, aspect })
 
   const headOff = headRef ? driftMessage(headRef, pose, aspect) : null
   drawPoints(overlay, frame.points)
@@ -343,7 +343,7 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
       (c) => `<tr>
         <td>${c.set.name}</td>
         <td>${weightCount(c.set)}</td>
-        <td${used(c.set === xModel.set)}>${pct(c.test.hitRate)}</td>
+        <td${used(c.set === xModel.set)}>${pct(c.test.hitRate)} (${pct(c.test.stressHit)})</td>
         <td${used(c.set === xModel.set)}>${c.testErrX.toFixed(1)}%</td>
         <td${used(c.set === xModel.set)}>${c.cvErrX.toFixed(1)}%</td>
         <td${used(c.set === yModel.set)}>${c.cvErrY.toFixed(1)}%</td>
@@ -355,16 +355,17 @@ function showReport({ candidates, score, xModel, yModel }: CalibrationResult) {
   const perWord = Object.entries(score.hitByWord)
     .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}${lean(score.biasByWord[id])}`)
     .join(' &nbsp; ')
-  report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, jitter ${score.jitter.toFixed(1)}%</p>
+  report.innerHTML = `<p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, ${pct(score.stressHit)} under stress, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
   <table>
-    <tr><th>Recipe</th><th>Weights</th><th>Test hits</th><th>Test error ↔</th><th>CV error ↔</th><th>CV error ↕</th></tr>
+    <tr><th>Recipe</th><th>Weights</th><th>Test hits (stress)</th><th>Test error ↔</th><th>CV error ↔</th><th>CV error ↕</th></tr>
     ${rows}
   </table>
   <p class="muted">← / → = which way the estimate leans on that button.<br>
   CV error = RMS aim error on spots the recipe never trained on (% of screen).<br>
   Test = the word test (one look at each button, edges included).<br>
-  Left/right recipe: most test hits first, then lowest average of test + CV error; simplest if close.</p>`
+  Stress = test hits if the estimate drifted 3% left or right: the safety margin.<br>
+  Left/right recipe: best stress score first, then lowest average of test + CV error; simplest if close.</p>`
 }
 
 main().catch((err) => {

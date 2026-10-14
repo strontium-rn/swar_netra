@@ -2,13 +2,14 @@
 //   1. Sweep: a star visits 11 spots across the whole width (word centers, the gaps
 //      between words, and both edges), so the model learns the full left-to-right range.
 //   2. Test: one look at each word.
-//   3. Choose: the recipe that hits the most words in the test; among equally good ones, the
-//      lowest error over two "exams" (cross-validation + the word test), simplest if close.
+//   3. Choose: the recipe that passes the word test's STRESS test best (still hits the words
+//      when pushed a little left/right, so it has a safety margin); among equally good ones,
+//      the lowest error over two "exams" (cross-validation + the word test), simplest if close.
 //   4. Quality gate: buttons below GATE % can be redone, instead of shipping a bad board.
 //   5. Final model: trained on ALL the data (sweep + test) with the chosen recipe.
 
 import type { Board } from './board.ts'
-import { ask, countdown, recordAtTargets, toSamples, type Recording, type Target } from './calibration.ts'
+import { ask, countdown, measureHead, recordAtTargets, toSamples, type Recording, type Target } from './calibration.ts'
 import { crossValidate, scoreModel, type Score } from './evaluate.ts'
 import type { FrameStream } from './frameStream.ts'
 import { FEATURE_SETS, GazeModel, weightCount, type FeatureSet } from './gazeModel.ts'
@@ -51,11 +52,13 @@ export async function runCalibrationFlow(
   try {
     // 1. Sweep across the full width.
     await countdown(layer, 'Follow the star with your eyes.<br>Keep your head still.')
-    const calibration = await recordAtTargets(layer, stream, sweepTargets(cols))
+    // Remember where the head is now: if it moves during calibration, recording pauses.
+    const head = await measureHead(stream)
+    const calibration = await recordAtTargets(layer, stream, sweepTargets(cols), head)
 
     // 3. Test each word.
     await countdown(layer, 'Quick test: look at the star on each picture.')
-    let test = await recordAtTargets(layer, stream, cols.map((c) => wordTarget(c, 0.5)))
+    let test = await recordAtTargets(layer, stream, cols.map((c) => wordTarget(c, 0.5)), head)
 
     let candidates: Candidate[] = []
     let xSet: FeatureSet
@@ -69,10 +72,12 @@ export async function runCalibrationFlow(
       })
       // Choose. Cross-validation alone isn't enough: it can only check spots BETWEEN other
       // spots, so a straight-line recipe that misses the edge words can still look fine
-      // there. The word test checks the real buttons, edges included. So: first keep the
-      // recipes that hit the most words, then pick the lowest average of the two errors.
-      const bestHit = Math.max(...candidates.map((c) => c.test.hitRate))
-      const contenders = candidates.filter((c) => c.test.hitRate >= bestHit - 1)
+      // there. The word test checks the real buttons, edges included. Plain hit rate isn't
+      // enough either: a shaky recipe can "hit" with its estimate sitting next to a border,
+      // and then misses in real use. So: first keep the recipes with the best STRESS hit
+      // rate (safety margin), then pick the lowest average of the two errors.
+      const bestHit = Math.max(...candidates.map((c) => c.test.stressHit))
+      const contenders = candidates.filter((c) => c.test.stressHit >= bestHit - 2)
       const chosen = simplestGoodEnough(contenders, (c) => (c.cvErrX + c.testErrX) / 2)
       xSet = chosen.set
       score = chosen.test
@@ -91,8 +96,8 @@ export async function runCalibrationFlow(
 
       // Extra practice on the weak buttons only (two heights each), then re-test them.
       await countdown(layer, 'A few more looks. Follow the star.')
-      calibration.push(...(await recordAtTargets(layer, stream, weak.flatMap((c) => [wordTarget(c, 0.3), wordTarget(c, 0.7)]))))
-      const retest = await recordAtTargets(layer, stream, weak.map((c) => wordTarget(c, 0.5)))
+      calibration.push(...(await recordAtTargets(layer, stream, weak.flatMap((c) => [wordTarget(c, 0.3), wordTarget(c, 0.7)]), head)))
+      const retest = await recordAtTargets(layer, stream, weak.map((c) => wordTarget(c, 0.5)), head)
       test = test.map((r) => retest.find((n) => n.target.id === r.target.id) ?? r)
     }
 
