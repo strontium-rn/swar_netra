@@ -15,6 +15,7 @@ import { FrameStream } from './frameStream.ts'
 import { driftMessage, headPose, type HeadPose } from './headGuard.ts'
 import { Board } from './board.ts'
 import { DwellSelector } from './dwell.ts'
+import { DriftTracker } from './driftTracker.ts'
 import { speak } from './speech.ts'
 import { findTile, pageTiles, tileColor, type PageId } from './vocabulary.ts'
 import { loadCalibration, saveCalibration } from './storage.ts'
@@ -28,6 +29,7 @@ const calibrateBtn = $<HTMLButtonElement>('#calibrate')
 const recalibrateBtn = $<HTMLButtonElement>('#recalibrate')
 const quickFixBtn = $<HTMLButtonElement>('#quickfix')
 const saveDataBtn = $<HTMLButtonElement>('#save-data')
+const driftInfo = $<HTMLSpanElement>('#drift-info')
 const fullscreenBtn = $<HTMLButtonElement>('#fullscreen')
 const smoothToggle = $<HTMLInputElement>('#smooth')
 const showDotToggle = $<HTMLInputElement>('#show-dot')
@@ -55,7 +57,11 @@ let savedHitRate = 0
 const stream = new FrameStream()
 const smoother = new GazeSmoother()
 const dwell = new DwellSelector()
+const drift = new DriftTracker()
 const board = new Board($<HTMLElement>('#words'))
+let centers: number[] = [] // x of each button center, for the drift tracker
+const updateCenters = () => (centers = board.centers().map((c) => c.x))
+window.addEventListener('resize', updateCenters)
 
 // Show a page of the board. The button that lands under the gaze is locked until
 // the user looks away, so a page change never selects something by accident.
@@ -71,6 +77,7 @@ function showPage(next: PageId) {
       },
   )
   dwell.reset(board.setPage(tiles))
+  updateCenters()
   const category = next === 'home' ? null : findTile(next)
   pageTitle.textContent = category ? `${category.icon} ${category.label}` : ''
 }
@@ -142,24 +149,29 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
   const pose = headPose(frame, aspect)
   stream.publish({ features, pose })
 
-  const drift = headRef ? driftMessage(headRef, pose, aspect) : null
+  const headOff = headRef ? driftMessage(headRef, pose, aspect) : null
   drawPoints(overlay, frame.points)
-  drawHeadGuide(overlay, headRef, pose, drift === null)
+  drawHeadGuide(overlay, headRef, pose, headOff === null)
 
   if (mode !== 'board' || !xModel || !yModel) return
 
   // Gaze → smoothing → position on screen (as fractions, clamped to 0..1).
   let gaze = { x: xModel.predict(features).x, y: yModel.predict(features).y }
   if (smoothToggle.checked) gaze = smoother.smooth(gaze, dt)
+  // Drift correction: shift by what the tracker has learned, then let it learn from this frame
+  // (only while the head is in position, so it doesn't learn from bad data).
+  gaze.x = drift.correct(gaze.x)
+  if (!headOff) drift.observe(gaze.x, now, centers)
+  showDriftCorrection()
   const x = Math.min(1, Math.max(0, gaze.x))
   const y = Math.min(1, Math.max(0, gaze.y))
   gazeDot.style.transform = `translate(${x * window.innerWidth}px, ${y * window.innerHeight}px)`
   gazeDot.hidden = !showDotToggle.checked
-  gazeDot.classList.toggle('paused', drift !== null)
+  gazeDot.classList.toggle('paused', headOff !== null)
 
-  showWarning(drift)
+  showWarning(headOff)
   // Fail-safe: if the head is out of position, the gaze can't be trusted, so select nothing.
-  updateBoard(drift ? null : board.wordAt(x, now), now)
+  updateBoard(headOff ? null : board.wordAt(x, now), now)
 }
 
 // Before calibrating, make sure the camera can see the face. Starting without a face
@@ -201,6 +213,14 @@ function showWarning(message: string | null) {
   if (message) headWarning.textContent = message
 }
 
+// Show the caregiver how much the drift tracker is currently correcting.
+let shownCorrection = ''
+function showDriftCorrection() {
+  const c = drift.current * 100
+  const text = Math.abs(c) < 0.5 ? 'none' : `${c < 0 ? '←' : '→'} ${Math.abs(c).toFixed(1)}%`
+  if (text !== shownCorrection) driftInfo.textContent = shownCorrection = text
+}
+
 function enterBoard() {
   welcome.hidden = true
   mode = 'board'
@@ -226,6 +246,7 @@ async function calibrate() {
     yModel = result.yModel
     headRef = result.headRef
     lastResult = result
+    drift.reset()
     savedHitRate = result.score.hitRate
     persist()
     showReport(result)
@@ -268,6 +289,7 @@ async function quickFix() {
     xModel = fixed.xModel
     yModel = fixed.yModel
     headRef = fixed.headRef
+    drift.reset()
     persist()
     messageIcon.textContent = ''
     messageText.textContent = 'Fixed. Look at a word to say it'

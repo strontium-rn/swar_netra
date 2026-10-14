@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Personal calibration recordings (eye measurements): keep them off the public repo
+calibiration data/
