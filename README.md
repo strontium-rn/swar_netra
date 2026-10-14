@@ -31,14 +31,14 @@ A short calibration (follow a ⭐ with your eyes) teaches the app how *your* eye
 - Webcam eye tracking with per-person calibration and an automatic quality check
 - Category board: Help, Quick talk, Food & drink, Feelings, Activities, Body & needs
 - Dwell to select (look ~1 s), spoken output, head-position warning
-- Quick fix (3 looks) for small head shifts, and saved calibration
+- Quick fix (3 looks) and automatic drift correction, saved calibration
+- Works offline after the first visit (installable app)
 
 **In progress**
 - Making calibration more reliable across people, lighting and glasses
 
 **Next**
 - Caregiver editing: custom words, pictures and recorded voices
-- Offline support (installable app)
 - More vocabulary, such as people and a keyboard for children who can read
 
 ⚠️ This is a prototype and has not been tested with children yet. It is not a medical device.
@@ -53,5 +53,14 @@ npm run dev
 ```
 
 Open http://localhost:5173 in Chrome, allow the camera, and click **Start calibration**.
+
+To try the offline version (what users get when it's hosted):
+
+```bash
+npm run build
+npm run preview
+```
+
+Open http://localhost:4173 once, and after that it also starts without internet.
 
 **Tips:** light on your face (not behind you), sit about an arm's length from the screen, and keep your head still during calibration.

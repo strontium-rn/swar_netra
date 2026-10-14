@@ -19,6 +19,7 @@ import { DriftTracker } from './driftTracker.ts'
 import { speak } from './speech.ts'
 import { findTile, pageTiles, tileColor, type PageId } from './vocabulary.ts'
 import { loadCalibration, saveCalibration } from './storage.ts'
+import { enableOffline } from './offline.ts'
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!
 const video = $<HTMLVideoElement>('#video')
@@ -91,6 +92,9 @@ async function main() {
   overlay.width = video.videoWidth
   overlay.height = video.videoHeight
   const aspect = video.videoWidth / video.videoHeight
+
+  status.textContent = 'Preparing offline mode…'
+  await enableOffline()
 
   status.textContent = 'Loading face model…'
   const detector = await LandmarkDetector.create()

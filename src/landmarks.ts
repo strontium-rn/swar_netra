@@ -20,11 +20,13 @@ export type FaceFrame = {
 export const RIGHT_IRIS = [468, 469, 470, 471, 472]
 export const LEFT_IRIS = [473, 474, 475, 476, 477]
 
-// The model's code (WebAssembly) and its trained weights are downloaded once
-// when the page loads. Only these files are downloaded; your video never leaves the laptop.
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm'
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+// The model's code (WebAssembly) and its trained weights are served by our own site
+// (copied there by scripts/copy-mediapipe.mjs), so the service worker can keep them
+// for offline use. Your video never leaves the laptop.
+// BASE_URL is where the app lives ("/" locally, or e.g. "/swar_netra/" when hosted).
+const local = (path: string) => new URL(`${import.meta.env.BASE_URL}${path}`, location.href).href
+const WASM_URL = local('mediapipe/wasm')
+const MODEL_URL = local('mediapipe/face_landmarker.task')
 
 export class LandmarkDetector {
   private landmarker: FaceLandmarker

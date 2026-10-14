@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "setup-mediapipe": "node scripts/copy-mediapipe.mjs",
+    "predev": "node scripts/copy-mediapipe.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

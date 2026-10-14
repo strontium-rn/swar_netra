@@ -25,3 +25,6 @@ dist-ssr
 
 # Personal calibration recordings (eye measurements): keep them off the public repo
 calibiration data/
+
+# Copied/downloaded by scripts/copy-mediapipe.mjs
+public/mediapipe/
