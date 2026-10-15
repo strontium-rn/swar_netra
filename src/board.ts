@@ -7,10 +7,31 @@ export type TileView = {
   id: string
   label: string
   icon: string
+  picture?: string // web address of a photo; shown instead of the emoji
   color: string
   // For a category: the words inside it, shown small on the button so the user
   // can see what's in there before choosing it, instead of guessing.
-  preview?: { icon: string; label: string }[]
+  preview?: { icon: string; picture?: string; label: string }[]
+}
+
+// Make an element with a class and (optional) text.
+// Text is set with textContent, never innerHTML: labels are typed by caregivers, and
+// innerHTML would treat text like "<img onerror=…>" as code to run. textContent always
+// shows text as plain text, whatever it contains.
+function el(tag: string, className: string, text = ''): HTMLElement {
+  const e = document.createElement(tag)
+  e.className = className
+  e.textContent = text
+  return e
+}
+
+// The picture on a button: the caregiver's photo if there is one, else the emoji.
+export function iconElement(icon: string, picture: string | undefined, className: string): HTMLElement {
+  if (!picture) return el('span', className, icon)
+  const img = el('img', `${className} photo`) as HTMLImageElement
+  img.src = picture
+  img.alt = ''
+  return img
 }
 
 // Debouncing: to switch to another button, the gaze must stay in that button's column
@@ -37,21 +58,19 @@ export class Board {
 
     this.container.replaceChildren()
     this.buttons = tiles.map((tile) => {
-      const el = document.createElement('div')
+      const button = el('div', tile ? 'word' : 'word empty')
       if (tile) {
-        el.className = 'word'
-        el.style.setProperty('--color', tile.color)
-        el.innerHTML = `<span class="icon">${tile.icon}</span><span class="label">${tile.label}</span>`
+        button.style.setProperty('--color', tile.color)
+        button.append(iconElement(tile.icon, tile.picture, 'icon'), el('span', 'label', tile.label))
         if (tile.preview) {
-          el.classList.add('category')
-          el.innerHTML += `<span class="preview-icons">${tile.preview.map((w) => w.icon).join('')}</span>
-            <span class="preview-words">${tile.preview.map((w) => w.label).join(' · ')}</span>`
+          button.classList.add('category')
+          const icons = el('span', 'preview-icons')
+          icons.append(...tile.preview.map((w) => iconElement(w.icon, w.picture, 'preview-icon')))
+          button.append(icons, el('span', 'preview-words', tile.preview.map((w) => w.label).join(' · ')))
         }
-      } else {
-        el.className = 'word empty'
       }
-      this.container.append(el)
-      return { id: tile?.id ?? null, el }
+      this.container.append(button)
+      return { id: tile?.id ?? null, el: button }
     })
 
     this.current = gazeColumn >= 0 ? (this.buttons[gazeColumn]?.id ?? null) : null

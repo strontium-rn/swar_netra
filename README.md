@@ -33,12 +33,13 @@ A short calibration (follow a ⭐ with your eyes) teaches the app how *your* eye
 - Dwell to select (look ~1 s), spoken output, head-position warning
 - Quick fix (3 looks) and automatic drift correction, saved calibration
 - Works offline after the first visit (installable app)
+- Caregiver editing: change words, emojis, colors and positions, add photos, and record your own voice (all saved on this computer only)
 
 **In progress**
 - Making calibration more reliable across people, lighting and glasses
 
 **Next**
-- Caregiver editing: custom words, pictures and recorded voices
+- Backup and share a word set as a file (e.g. a therapist sets it up, the family loads it)
 - More vocabulary, such as people and a keyboard for children who can read
 
 ⚠️ This is a prototype and has not been tested with children yet. It is not a medical device.

@@ -26,6 +26,7 @@
             <button id="quickfix" title="3 looks: fixes small head shifts">Quick fix</button>
             <button id="recalibrate">Recalibrate</button>
             <button id="fullscreen">Full screen</button>
+            <button id="edit-words">Edit words</button>
           </div>
           <div class="row">
             <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
@@ -54,7 +55,10 @@
           <li>During calibration, follow the ⭐ with your eyes only.</li>
           <li>Afterwards, look at a word for about a second to say it.</li>
         </ul>
-        <button id="calibrate" disabled>Start calibration</button>
+        <div class="row">
+          <button id="calibrate" disabled>Start calibration</button>
+          <button id="welcome-edit" class="secondary">Edit words</button>
+        </div>
       </div>
     </div>
 
@@ -66,6 +70,9 @@
 
     <!-- Layer over the board where the calibration star and countdown appear -->
     <div id="calib-layer" hidden></div>
+
+    <!-- Word editor for parents and therapists -->
+    <div id="editor" hidden></div>
 
     <!-- Shows where the system thinks you're looking (off by default) -->
     <div id="gaze-dot" hidden></div>

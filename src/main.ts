@@ -17,8 +17,11 @@ import { Board } from './board.ts'
 import { DwellSelector } from './dwell.ts'
 import { DriftTracker } from './driftTracker.ts'
 import { speak } from './speech.ts'
-import { findTile, pageTiles, tileColor, type PageId } from './vocabulary.ts'
-import { loadCalibration, saveCalibration } from './storage.ts'
+import { findTile, mediaIds, pageTiles, tileColor, useVocabulary, vocabulary, type PageId } from './vocabulary.ts'
+import { loadCalibration, loadVocabulary, saveCalibration } from './storage.ts'
+import { loadMedia, mediaUrl } from './media.ts'
+import { iconElement } from './board.ts'
+import { openEditor } from './editor.ts'
 import { enableOffline } from './offline.ts'
 import { NoiseMeter, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
@@ -44,12 +47,14 @@ const messageText = $<HTMLSpanElement>('#message-text')
 const pageTitle = $<HTMLDivElement>('#page-title')
 const calibLayer = $<HTMLDivElement>('#calib-layer')
 const gazeDot = $<HTMLDivElement>('#gaze-dot')
+const editorEl = $<HTMLDivElement>('#editor')
 
 // ---- App state ----
 // The app is always in exactly one mode. Writing it down explicitly (a "state machine")
 // avoids bugs like the board reacting to your eyes while you're calibrating.
 //   setup → calibrating → board  (and board → calibrating again on "Recalibrate")
-let mode: 'setup' | 'calibrating' | 'board' = 'setup'
+//   editing: the caregiver is changing words; the eyes select nothing meanwhile.
+let mode: 'setup' | 'calibrating' | 'board' | 'editing' = 'setup'
 let xModel: GazeModel | null = null // predicts left/right (decides the word)
 let yModel: GazeModel | null = null // predicts up/down (only used for the gaze dot)
 let headRef: HeadPose | null = null // head position during calibration
@@ -76,8 +81,12 @@ function showPage(next: PageId) {
         id: t.id,
         label: t.label,
         icon: t.icon,
+        picture: t.kind === 'back' ? undefined : mediaUrl(t.picture),
         color: tileColor(t, next),
-        preview: t.kind === 'category' ? t.words.map((w) => ({ icon: w.icon, label: w.label })) : undefined,
+        preview:
+          t.kind === 'category'
+            ? t.words.flatMap((w) => (w ? [{ icon: w.icon, picture: mediaUrl(w.picture), label: w.label }] : []))
+            : undefined,
       },
   )
   dwell.reset(board.setPage(tiles))
@@ -85,9 +94,15 @@ function showPage(next: PageId) {
   const category = next === 'home' ? null : findTile(next)
   pageTitle.textContent = category ? `${category.icon} ${category.label}` : ''
 }
+useVocabulary(loadVocabulary())
 showPage('home')
 
 async function main() {
+  // Photos and recordings load from the browser's database (fast, but not instant),
+  // then the page is drawn again with them.
+  await loadMedia(mediaIds(vocabulary()))
+  showPage('home')
+
   status.textContent = 'Starting camera…'
   await startCamera(video)
 
@@ -226,9 +241,9 @@ function updateBoard(target: string | null, now: number) {
   } else {
     // A word: flash it, show it big for the listener, and say it.
     board.flash(tile.id)
-    messageIcon.textContent = tile.icon
+    messageIcon.replaceChildren(iconElement(tile.icon, mediaUrl(tile.picture), 'message-photo'))
     messageText.textContent = tile.label
-    speak(tile.speak)
+    speak(tile.speak, mediaUrl(tile.audio))
     // Stay on this page: only the user decides when to go back (via the Back button).
   }
 }
@@ -349,11 +364,35 @@ function saveData() {
   URL.revokeObjectURL(url)
 }
 
+// ---- Word editor ----
+
+async function editWords() {
+  if (mode === 'calibrating' || mode === 'editing') return
+  const before = mode
+  mode = 'editing'
+  gazeDot.hidden = true
+  headWarning.hidden = true
+  const edited = await openEditor(editorEl, vocabulary())
+  if (edited) {
+    useVocabulary(edited)
+    messageIcon.textContent = ''
+    messageText.textContent = 'Look at a word to say it'
+  }
+  await loadMedia(mediaIds(vocabulary())) // also deletes photos/recordings no longer used
+  showPage('home')
+  mode = before
+}
+
 calibrateBtn.addEventListener('click', calibrate)
+$('#edit-words').addEventListener('click', editWords)
+$('#welcome-edit').addEventListener('click', editWords)
 quickFixBtn.addEventListener('click', quickFix)
 saveDataBtn.addEventListener('click', saveData)
 recalibrateBtn.addEventListener('click', calibrate)
 fullscreenBtn.addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}))
+
+// Caregiver-typed text must never be read as HTML code (see board.ts).
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 function showReport({ candidates, score, xModel, yModel, noise }: CalibrationResult) {
   accuracy.textContent = `Words hit ${Math.round(score.hitRate)}% of the time`
@@ -375,7 +414,7 @@ function showReport({ candidates, score, xModel, yModel, noise }: CalibrationRes
   // Bias: which way the estimate leans on each button (← left, → right), if noticeably.
   const lean = (b: number | undefined) => (b === undefined || Math.abs(b) < 1 ? '' : ` ${b < 0 ? '←' : '→'}${Math.abs(b).toFixed(1)}%`)
   const perWord = Object.entries(score.hitByWord)
-    .map(([id, hit]) => `${findTile(id)?.icon ?? id} ${pct(hit)}${lean(score.biasByWord[id])}`)
+    .map(([id, hit]) => `${escapeHtml(findTile(id)?.icon ?? id)} ${pct(hit)}${lean(score.biasByWord[id])}`)
     .join(' &nbsp; ')
   const level = signalLevel(noise)
   report.innerHTML = `<p><b>Eye signal during calibration:</b> ${level} (noise ${(noise * 10000).toFixed(1)}; good is under 3)${
