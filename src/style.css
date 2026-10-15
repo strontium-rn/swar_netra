@@ -320,22 +320,41 @@ label {
   inset: 0;
   z-index: 10;
   background: rgba(0, 0, 0, 0.55);
+  overflow: hidden; /* the moved star box must not create scrollbars */
 }
 
 .calib-star {
+  /* A transparent box the size of the screen; the star sits at its top-left corner.
+     Moving the box by x% y% puts the star at x%, y% of the screen. */
   position: absolute;
-  font-size: 64px;
-  line-height: 1;
-  transform: translate(-50%, -50%); /* center the star on its left/top point */
-  /* Glide between spots (easier for the eye to follow) and shrink while recording. */
-  transition:
-    left 0.4s ease,
-    top 0.4s ease,
-    transform 1s linear;
+  inset: 0;
+  pointer-events: none;
+  transition: translate var(--move, 0.6s) ease-in-out; /* glide: speed up, then slow down */
 }
 
-.calib-star.collecting {
+.calib-star span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 64px;
+  line-height: 1;
+  transform: translate(-50%, -50%); /* center the star on its spot */
+  /* Grow back to full size while gliding (same timing as the move). */
+  transition: transform var(--move, 0.6s) ease-in-out;
+}
+
+/* First appearance: no glide, start invisible-small, then grow in place. */
+.calib-star.entering {
+  transition: none;
+}
+.calib-star.entering span {
+  transform: translate(-50%, -50%) scale(0);
+}
+
+/* Shrink slowly while recording: pulls the eye to the star's exact center. */
+.calib-star.collecting span {
   transform: translate(-50%, -50%) scale(0.45) rotate(72deg);
+  transition: transform 1s ease-out;
 }
 
 .calib-card {

@@ -19,7 +19,8 @@ export type Recording = { target: Target; frames: EyeFeatures[] }
 // Timing for each spot. People react at different speeds (a child, a grandparent), so
 // instead of guessing when the eyes have arrived, we record a longer stretch and then
 // KEEP the steadiest part of it: that's where the eyes were resting on the star.
-const SETTLE_MS = 400 // the eyes are certainly still jumping during this part: skip it
+const MOVE_MS = 600 // the star glides to the next spot in this time
+const SETTLE_MS = 200 // after it arrives the eyes are still landing: skip this part too
 const LOOK_MS = 1600 // then record for this long...
 export const COLLECT_MS = 800 // ...and keep the steadiest stretch of this length
 
@@ -97,9 +98,14 @@ export async function recordAtTargets(
 ): Promise<Recording[]> {
   layer.hidden = false
   const star = document.createElement('div')
-  star.className = 'calib-star'
-  star.textContent = '⭐'
+  star.className = 'calib-star entering'
+  star.innerHTML = '<span>⭐</span>'
+  star.style.setProperty('--move', `${MOVE_MS}ms`) // one number shared by code and CSS
+  // Appear AT the first spot (growing in), instead of flying in from the corner.
+  if (targets.length) placeStar(star, targets[0])
   layer.append(star)
+  star.getBoundingClientRect() // make the browser draw the start state before animating
+  star.classList.remove('entering')
 
   try {
     const recordings: Recording[] = []
@@ -133,10 +139,9 @@ export async function recordAtTargets(
 
 // Show the star at one spot and record the eyes looking at it.
 async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target, head?: HeadPose): Promise<Recording> {
-  star.style.left = `${target.x * 100}%`
-  star.style.top = `${target.y * 100}%`
+  placeStar(star, target)
   star.classList.remove('collecting')
-  await wait(SETTLE_MS)
+  await wait(MOVE_MS + SETTLE_MS)
 
   // Shrinking the star while recording pulls the eye to its exact center.
   star.classList.add('collecting')
@@ -150,6 +155,13 @@ async function recordSpot(star: HTMLElement, stream: FrameStream, target: Target
 
   const steady = steadiest(dropBlinks(frames))
   return { target, frames: dropOutliers(steady.map((x) => x.f)) }
+}
+
+// The star box covers the whole layer, so a % move is a % of the screen. Moving with
+// `translate` (not left/top) lets the graphics chip animate it without redoing the page
+// layout every frame, which keeps it smooth even while face tracking keeps the CPU busy.
+function placeStar(star: HTMLElement, target: Target): void {
+  star.style.translate = `${target.x * 100}% ${target.y * 100}%`
 }
 
 // If the head has moved away, hide the star and tell the user how to get back, until the
