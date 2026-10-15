@@ -79,6 +79,8 @@ npm run preview
 
 Open http://localhost:4173 once, and after that it also starts without internet.
 
+**Tips:** light on your face (not behind you), sit about an arm's length from the screen, and keep your head still during calibration.
+
 ## Code map
 
 All code is in `src/`. Each file does one job:
@@ -98,5 +100,3 @@ All code is in `src/`. Each file does one job:
 | `storage.ts`, `media.ts` | Saving: words and calibration (localStorage), photos and recordings (IndexedDB) |
 | `speech.ts` | Speaks: your recording, or the computer voice |
 | `offline.ts`, `public/sw.js` | Offline support |
-
-**Tips:** light on your face (not behind you), sit about an arm's length from the screen, and keep your head still during calibration.
