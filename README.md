@@ -25,6 +25,21 @@ webcam → face landmarks (MediaPipe) → iris position → personal gaze model
 
 A short calibration (follow a ⭐ with your eyes) teaches the app how *your* eyes move. The board uses one row of tall buttons, because webcam tracking is much better at left/right than at up/down.
 
+## Changing the words (for parents and therapists)
+
+Click **Edit words** (on the welcome screen, or in the panel at the top of the board). You see each page laid out exactly like the board. Click a button to:
+
+- change its text, and what is said out loud
+- use an emoji, or a photo (e.g. the child's own cup)
+- record your own voice for it (otherwise the computer voice speaks)
+- change a group's color, move a word left or right, add or remove words
+
+Nothing changes on the board until you click **Save**. **Help** and **Back** always stay in the same place.
+
+Tip: children learn *where* each word is, so their eyes go there without searching. Change words when needed, but move them rarely.
+
+Everything (words, photos, recordings) is saved in this browser on this computer only. Clearing the browser's site data removes it.
+
 ## Current stage: early prototype
 
 **Working now**
@@ -63,5 +78,25 @@ npm run preview
 ```
 
 Open http://localhost:4173 once, and after that it also starts without internet.
+
+## Code map
+
+All code is in `src/`. Each file does one job:
+
+| File | Job |
+|---|---|
+| `main.ts` | Starts the app and connects all the parts |
+| `camera.ts`, `landmarks.ts` | Webcam, and finding face points (MediaPipe) |
+| `eyeFeatures.ts` | Turns face points into eye measurements |
+| `calibration.ts`, `calibrationFlow.ts` | The ⭐ calibration and word test |
+| `gazeModel.ts`, `evaluate.ts` | Learns where you look, and scores how well |
+| `smoothing.ts`, `driftTracker.ts` | Steadies the gaze, and corrects slow drift |
+| `headGuard.ts`, `signalQuality.ts` | Head-position and lighting checks |
+| `board.ts`, `dwell.ts` | Draws the buttons; "look ~1 s to select" |
+| `vocabulary.ts` | The words (and the starting set) |
+| `editor.ts` | The word editor for caregivers |
+| `storage.ts`, `media.ts` | Saving: words and calibration (localStorage), photos and recordings (IndexedDB) |
+| `speech.ts` | Speaks: your recording, or the computer voice |
+| `offline.ts`, `public/sw.js` | Offline support |
 
 **Tips:** light on your face (not behind you), sit about an arm's length from the screen, and keep your head still during calibration.
