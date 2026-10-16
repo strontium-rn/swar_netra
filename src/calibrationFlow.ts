@@ -7,6 +7,7 @@
 //      the lowest error over two "exams" (cross-validation + the word test), simplest if close.
 //   4. Quality gate: buttons below GATE % can be redone, instead of shipping a bad board.
 //   5. Final model: trained on ALL the data (sweep + test) with the chosen recipe.
+//   6. Column fix: a small per-button correction on top (see columnFix.ts).
 
 import type { Board } from './board.ts'
 import { ask, countdown, measureHead, recordAtTargets, toSamples, type Recording, type Target } from './calibration.ts'
@@ -14,6 +15,7 @@ import { crossValidate, scoreModel, type Score } from './evaluate.ts'
 import type { FrameStream } from './frameStream.ts'
 import { FEATURE_SETS, GazeModel, weightCount, type FeatureSet } from './gazeModel.ts'
 import { averagePose, type HeadPose } from './headGuard.ts'
+import { ColumnFix } from './columnFix.ts'
 import { findTile } from './vocabulary.ts'
 import { recordingNoise, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
@@ -31,6 +33,7 @@ export type Candidate = {
 
 export type CalibrationResult = {
   xModel: GazeModel // decides which word you're looking at
+  columnFix: ColumnFix // per-button correction applied after xModel
   yModel: GazeModel // only moves the gaze dot up/down
   headRef: HeadPose
   candidates: Candidate[]
@@ -114,14 +117,20 @@ export async function runCalibrationFlow(
     //    so its recordings now become extra training examples.
     const all: Recording[] = [...calibration, ...test]
     const ySet = simplestGoodEnough(candidates, (c) => c.cvErrY).set
+    const xModel = GazeModel.fit(toSamples(all), xSet)
+    // 6. Column fix, only with a clear eye signal: in dim light each look is so noisy that
+    //    the "corrections" would mostly be noise (in testing, it made the dim session worse).
+    const noise = recordingNoise(all)
+    const columnFix = signalLevel(noise) === 'poor' ? ColumnFix.none() : ColumnFix.learn(xModel, all, cols.map((c) => c.x))
     return {
-      xModel: GazeModel.fit(toSamples(all), xSet),
+      xModel,
+      columnFix,
       yModel: GazeModel.fit(toSamples(all), ySet),
       headRef: averagePose(poses),
       candidates,
       score,
       recordings: { calibration, test },
-      noise: recordingNoise(all),
+      noise,
     }
   } finally {
     stopPoses()
@@ -138,6 +147,7 @@ export async function runQuickFix(
   board: Board,
   xModel: GazeModel,
   yModel: GazeModel,
+  columnFix: ColumnFix,
 ): Promise<{ xModel: GazeModel; yModel: GazeModel; headRef: HeadPose }> {
   const cols = board.centers()
   const spots = [cols[0], cols[Math.floor(cols.length / 2)], cols[cols.length - 1]]
@@ -152,7 +162,7 @@ export async function runQuickFix(
     let n = 0
     for (const r of recs) {
       for (const f of r.frames) {
-        dx += r.target.x - xModel.predict(f).x
+        dx += r.target.x - columnFix.apply(xModel.predict(f).x)
         dy += r.target.y - yModel.predict(f).y
         n++
       }

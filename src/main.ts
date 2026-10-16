@@ -10,6 +10,7 @@ import { drawHeadGuide, drawPoints } from './debugView.ts'
 import { computeEyeFeatures } from './eyeFeatures.ts'
 import { runCalibrationFlow, runQuickFix, type CalibrationResult } from './calibrationFlow.ts'
 import { GazeModel, weightCount } from './gazeModel.ts'
+import { ColumnFix } from './columnFix.ts'
 import { GazeSmoother } from './smoothing.ts'
 import { FrameStream } from './frameStream.ts'
 import { driftMessage, headPose, type HeadPose } from './headGuard.ts'
@@ -58,6 +59,7 @@ const editorEl = $<HTMLDivElement>('#editor')
 let mode: 'setup' | 'calibrating' | 'board' | 'editing' = 'setup'
 let xModel: GazeModel | null = null // predicts left/right (decides the word)
 let yModel: GazeModel | null = null // predicts up/down (only used for the gaze dot)
+let columnFix = ColumnFix.none() // small per-button correction after xModel
 let headRef: HeadPose | null = null // head position during calibration
 let lastFaceMs = -Infinity // when a face was last seen
 let lastResult: CalibrationResult | null = null // this session's calibration, for "Save data"
@@ -125,6 +127,7 @@ async function main() {
     try {
       xModel = GazeModel.fromJSON(saved.xModel)
       yModel = GazeModel.fromJSON(saved.yModel)
+      columnFix = new ColumnFix(saved.columnFix ?? [])
       headRef = saved.headRef
       savedHitRate = saved.hitRate
       accuracy.textContent = `Saved calibration · ${Math.round(saved.hitRate)}% hit rate`
@@ -199,7 +202,7 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
   if (mode !== 'board' || !xModel || !yModel) return
 
   // Gaze → smoothing → position on screen (as fractions, clamped to 0..1).
-  let gaze = { x: xModel.predict(features).x, y: yModel.predict(features).y }
+  let gaze = { x: columnFix.apply(xModel.predict(features).x), y: yModel.predict(features).y }
   if (smoothToggle.checked) gaze = smoother.smooth(gaze, dt)
   // Drift correction: shift by what the tracker has learned, then let it learn from this frame
   // (only while the head is in position, so it doesn't learn from bad data).
@@ -302,6 +305,7 @@ async function calibrate() {
     const result = await runCalibrationFlow(calibLayer, stream, board)
     xModel = result.xModel
     yModel = result.yModel
+    columnFix = result.columnFix
     headRef = result.headRef
     lastResult = result
     drift.reset()
@@ -327,6 +331,7 @@ function persist() {
   if (!xModel || !yModel || !headRef) return
   saveCalibration({
     xModel: xModel.toJSON(),
+    columnFix: columnFix.toJSON(),
     yModel: yModel.toJSON(),
     headRef,
     hitRate: savedHitRate,
@@ -343,7 +348,7 @@ async function quickFix() {
   showPage('home')
   board.show(null, null, 0)
   try {
-    const fixed = await runQuickFix(calibLayer, stream, board, xModel, yModel)
+    const fixed = await runQuickFix(calibLayer, stream, board, xModel, yModel, columnFix)
     xModel = fixed.xModel
     yModel = fixed.yModel
     headRef = fixed.headRef
@@ -369,6 +374,7 @@ function saveData() {
     columns: board.centers(),
     chosen: { x: xm.set.name, y: ym.set.name },
     noise: lastResult.noise,
+    columnFix: lastResult.columnFix.toJSON(),
     candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY, testHit: c.test.hitRate, testErrX: c.testErrX })),
     score,
     headRef,
@@ -412,7 +418,7 @@ fullscreenBtn.addEventListener('click', () => document.documentElement.requestFu
 // Caregiver-typed text must never be read as HTML code (see board.ts).
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
-function showReport({ candidates, score, xModel, yModel, noise }: CalibrationResult) {
+function showReport({ candidates, score, xModel, yModel, noise, columnFix: fix }: CalibrationResult) {
   accuracy.textContent = `Words hit ${Math.round(score.hitRate)}% of the time`
 
   const pct = (v: number) => `${Math.round(v)}%`
@@ -434,12 +440,16 @@ function showReport({ candidates, score, xModel, yModel, noise }: CalibrationRes
   const perWord = Object.entries(score.hitByWord)
     .map(([id, hit]) => `${escapeHtml(findTile(id)?.icon ?? id)} ${pct(hit)}${lean(score.biasByWord[id])}`)
     .join(' &nbsp; ')
+  const fixes = fix.points.length
+    ? fix.points.map((p) => `${p.fix < 0 ? '←' : '→'}${Math.abs(p.fix * 100).toFixed(1)}%`).join(' ')
+    : 'off (eye signal too weak to measure them reliably)'
   const level = signalLevel(noise)
   report.innerHTML = `<p><b>Eye signal during calibration:</b> ${level} (noise ${(noise * 10000).toFixed(1)}; good is under 3)${
     level === 'poor' ? `<br>⚠ ${SIGNAL_ADVICE} Then recalibrate.` : ''
   }</p>
   <p><b>Word test</b> (${xModel.set.name}): ${pct(score.hitRate)} hit rate, ${pct(score.stressHit)} under stress, jitter ${score.jitter.toFixed(1)}%</p>
   <p>Per word: ${perWord}</p>
+  <p>Button fixes (small per-button correction): ${fixes}</p>
   <table>
     <tr><th>Recipe</th><th>Weights</th><th>Test hits (stress)</th><th>Test error ↔</th><th>CV error ↔</th><th>CV error ↕</th></tr>
     ${rows}

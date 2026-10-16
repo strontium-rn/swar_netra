@@ -7,6 +7,7 @@
 
 import type { SavedModel } from './gazeModel.ts'
 import type { HeadPose } from './headGuard.ts'
+import type { ColumnFixData } from './columnFix.ts'
 import { COLUMNS, DEFAULT_VOCABULARY, SLOTS, type Category, type Vocabulary, type Word } from './vocabulary.ts'
 
 // The "v3" is a schema version. When what we save changes meaning, we bump it, so the app
@@ -16,6 +17,7 @@ const KEY = 'swar-netra-calibration-v3'
 
 export type SavedCalibration = {
   xModel: SavedModel // model used for left/right
+  columnFix?: ColumnFixData // per-button correction (missing in calibrations saved before it existed)
   yModel: SavedModel // model used for up/down
   headRef: HeadPose // where the head was during calibration
   hitRate: number // test result, shown to the caregiver
