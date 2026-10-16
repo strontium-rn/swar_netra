@@ -40,6 +40,17 @@ Tip: children learn *where* each word is, so their eyes go there without searchi
 
 Everything (words, photos, recordings) is saved in this browser on this computer only. Clearing the browser's site data removes it.
 
+## Phone alerts for parents
+
+When nobody is in the room, the child's words also go to the parents' phones. A parent can tap **🏃 Coming** or **⏳ 5 minutes**, and the laptop shows and says "Mum is coming", so the child knows the message was received.
+
+- **Set up:** on the laptop, click **Phone alerts → Set up**, then scan the QR code with the parent's Android phone (Chrome). Several parents can join.
+- **Per word:** in **Edit words**, each word can send no alert, an alert, or an urgent alert. By default Help is urgent (it repeats every minute until someone replies), Quick talk sends nothing, and everything else sends a normal alert.
+- **Private:** messages are end-to-end encrypted. The key travels only inside the QR code, so the relay server passes along messages it cannot read.
+- **Honest:** if a message can't be sent (no internet, no phone paired), the laptop says so.
+
+⚠️ Notifications can be delayed or missed (phone off, no signal, battery saver). They support supervision; they don't replace it.
+
 ## Current stage: early prototype
 
 **Working now**
@@ -49,11 +60,13 @@ Everything (words, photos, recordings) is saved in this browser on this computer
 - Quick fix (3 looks) and automatic drift correction, saved calibration
 - Works offline after the first visit (installable app)
 - Caregiver editing: change words, emojis, colors and positions, add photos, and record your own voice (all saved on this computer only)
+- Phone alerts: parents get the child's words as notifications on Android and can reply "Coming"
 
 **In progress**
 - Making calibration more reliable across people, lighting and glasses
 
 **Next**
+- Host the relay server online, so families don't need a tunnel
 - Backup and share a word set as a file (e.g. a therapist sets it up, the family loads it)
 - More vocabulary, such as people and a keyboard for children who can read
 
@@ -79,11 +92,20 @@ npm run preview
 
 Open http://localhost:4173 once, and after that it also starts without internet.
 
+**Phone alerts** need the relay server, and phones need an HTTPS address to receive notifications:
+
+```bash
+npm run build
+npm run server            # serves the app + relay on http://localhost:8787
+```
+
+To try it with a real phone without deploying, expose the server over HTTPS with a tunnel, e.g. `cloudflared tunnel --url http://localhost:8787`, and open the printed `https://…` address on the laptop. During development, run `npm run server` next to `npm run dev`: Vite passes `/api` requests to it.
+
 **Tips:** light on your face (not behind you), sit about an arm's length from the screen, and keep your head still during calibration.
 
 ## Code map
 
-All code is in `src/`. Each file does one job:
+All app code is in `src/`, the relay server in `server/`. Each file does one job:
 
 | File | Job |
 |---|---|
@@ -100,3 +122,7 @@ All code is in `src/`. Each file does one job:
 | `storage.ts`, `media.ts` | Saving: words and calibration (localStorage), photos and recordings (IndexedDB) |
 | `speech.ts` | Speaks: your recording, or the computer voice |
 | `offline.ts`, `public/sw.js` | Offline support |
+| `alerts.ts`, `alertsPanel.ts` | Phone alerts, laptop side: pairing QR, sending, live replies |
+| `secureChannel.ts` | End-to-end encryption (AES-GCM) shared by laptop and phone |
+| `phone/phone.ts`, `phone.html`, `public/phone-sw.js` | The parents' phone app and its notification worker |
+| `server/server.ts`, `server/store.ts` | Relay server: pairing, Web Push, urgent repeats, replies |

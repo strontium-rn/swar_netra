@@ -18,12 +18,15 @@ import { Board } from './board.ts'
 import { DwellSelector } from './dwell.ts'
 import { DriftTracker } from './driftTracker.ts'
 import { speak } from './speech.ts'
-import { findTile, mediaIds, pageTiles, tileColor, useVocabulary, vocabulary, type PageId } from './vocabulary.ts'
+import { findTile, mediaIds, notifyLevel, pageTiles, tileColor, useVocabulary, vocabulary, type PageId } from './vocabulary.ts'
 import { loadCalibration, loadVocabulary, saveCalibration } from './storage.ts'
 import { getMedia, loadMedia, mediaUrl, replaceMedia } from './media.ts'
 import { trimSilence } from './trimAudio.ts'
 import { iconElement } from './board.ts'
 import { openEditor } from './editor.ts'
+import { PhoneAlerts, type SendResult } from './alerts.ts'
+import { openAlertsPanel } from './alertsPanel.ts'
+import { REPLY_TEXT } from './secureChannel.ts'
 import { enableOffline } from './offline.ts'
 import { NoiseMeter, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
@@ -50,6 +53,8 @@ const pageTitle = $<HTMLDivElement>('#page-title')
 const calibLayer = $<HTMLDivElement>('#calib-layer')
 const gazeDot = $<HTMLDivElement>('#gaze-dot')
 const editorEl = $<HTMLDivElement>('#editor')
+const alertsPanel = $<HTMLDivElement>('#alerts-panel')
+const alertStatus = $<HTMLDivElement>('#alert-status')
 
 // ---- App state ----
 // The app is always in exactly one mode. Writing it down explicitly (a "state machine")
@@ -71,6 +76,8 @@ const dwell = new DwellSelector()
 const drift = new DriftTracker()
 const noiseMeter = new NoiseMeter()
 const board = new Board($<HTMLElement>('#words'))
+const alerts = new PhoneAlerts()
+let currentPage: PageId = 'home'
 let centers: number[] = [] // x of each button center, for the drift tracker
 const updateCenters = () => (centers = board.centers().map((c) => c.x))
 window.addEventListener('resize', updateCenters)
@@ -92,6 +99,7 @@ function showPage(next: PageId) {
             : undefined,
       },
   )
+  currentPage = next
   dwell.reset(board.setPage(tiles))
   updateCenters()
   const category = next === 'home' ? null : findTile(next)
@@ -265,8 +273,46 @@ function updateBoard(target: string | null, now: number) {
     messageIcon.replaceChildren(iconElement(tile.icon, mediaUrl(tile.picture), 'message-photo'))
     messageText.textContent = tile.label
     speak(tile.speak, mediaUrl(tile.audio))
+    // Tell the parents' phones (if this word should alert, and phones are set up).
+    const level = notifyLevel(tile, currentPage)
+    if (level !== 'off' && alerts.enabled) {
+      showAlertStatus('📱 Sending…')
+      alerts.send(tile, level === 'urgent').then(showSendResult)
+    }
     // Stay on this page: only the user decides when to go back (via the Back button).
   }
+}
+
+// ---- Phone alerts ----
+
+function showAlertStatus(text: string, warn = false) {
+  alertStatus.textContent = text
+  alertStatus.classList.toggle('warn', warn)
+}
+
+// Be honest with the child and caregiver: say when a message did NOT reach anyone.
+function showSendResult(result: SendResult) {
+  if (result === 'sent') showAlertStatus('📱 Sent to phone')
+  else if (result === 'no-phones') showAlertStatus('📱 No phone is connected', true)
+  else if (result === 'failed') showAlertStatus('⚠️ Not sent: no internet', true)
+  else showAlertStatus('')
+}
+
+// A parent replied: show it big and say it, so the child knows someone is coming.
+alerts.onReply = (reply) => {
+  messageIcon.textContent = reply.reply === 'coming' ? '👍' : '⏳'
+  messageText.textContent = `${reply.name} ${REPLY_TEXT[reply.reply]}`
+  speak(`${reply.name} ${REPLY_TEXT[reply.reply]}`)
+  showAlertStatus('')
+}
+alerts.start()
+
+async function phoneAlerts() {
+  if (mode === 'calibrating' || mode === 'editing') return
+  const before = mode
+  mode = 'editing' // the eyes select nothing while the panel is open
+  await openAlertsPanel(alertsPanel, alerts)
+  mode = before
 }
 
 function showWarning(message: string | null) {
@@ -410,6 +456,7 @@ async function editWords() {
 calibrateBtn.addEventListener('click', calibrate)
 $('#edit-words').addEventListener('click', editWords)
 $('#welcome-edit').addEventListener('click', editWords)
+$('#phone-alerts').addEventListener('click', phoneAlerts)
 quickFixBtn.addEventListener('click', quickFix)
 saveDataBtn.addEventListener('click', saveData)
 recalibrateBtn.addEventListener('click', calibrate)

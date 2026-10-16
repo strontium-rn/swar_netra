@@ -18,7 +18,9 @@ import {
   BACK_COLOR,
   DEFAULT_VOCABULARY,
   HELP_COLOR,
+  notifyLevel,
   type Category,
+  type NotifyLevel,
   type PageId,
   type Vocabulary,
   type Word,
@@ -228,6 +230,18 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
       speakInput.oninput = () => (item.speak = speakInput!.value)
       formEl.append(row('What is said', speakInput, button('▶ Listen', () => speak(item.speak, mediaUrl(item.audio)), 'secondary')))
       formEl.append(voiceRow(item))
+
+      // Phone alert: what happens on the parents' phones when the child chooses this word.
+      const notify = el('select')
+      const options: [NotifyLevel, string][] = [
+        ['off', 'No alert'],
+        ['normal', 'Alert'],
+        ['urgent', 'Urgent alert (repeats until someone replies)'],
+      ]
+      for (const [value, text] of options) notify.append(el('option', { value, textContent: text }))
+      notify.value = notifyLevel(item, page === 'home' ? 'home' : page)
+      notify.onchange = () => (item.notify = notify.value as NotifyLevel)
+      formEl.append(row('Phone alert', notify))
     }
 
     if (item.kind === 'category') {

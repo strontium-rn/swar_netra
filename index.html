@@ -20,6 +20,8 @@
           <span id="message-icon"></span>
           <span id="message-text">Look at a word to say it</span>
         </div>
+        <!-- Did the word reach the parents' phones? -->
+        <div id="alert-status"></div>
         <!-- Controls for the caregiver (used with the mouse, not the eyes) -->
         <div id="caregiver">
           <div class="row">
@@ -27,6 +29,7 @@
             <button id="recalibrate">Recalibrate</button>
             <button id="fullscreen">Full screen</button>
             <button id="edit-words">Edit words</button>
+            <button id="phone-alerts">Phone alerts</button>
           </div>
           <div class="row">
             <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
@@ -70,6 +73,9 @@
 
     <!-- Layer over the board where the calibration star and countdown appear -->
     <div id="calib-layer" hidden></div>
+
+    <!-- Phone alerts setup (QR code for parents' phones) -->
+    <div id="alerts-panel" hidden></div>
 
     <!-- Word editor for parents and therapists -->
     <div id="editor" hidden></div>

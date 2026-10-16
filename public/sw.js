@@ -54,9 +54,17 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return
+  const url = new URL(request.url)
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return
+  // Server requests (phone alerts) must always go to the network: they're live data, and the
+  // reply connection never ends, so it could never be saved anyway.
+  if (url.pathname.startsWith(new URL('api/', self.registration.scope).pathname)) return
 
   if (request.mode === 'navigate') {
+    // Only the board page itself is saved for offline. Other pages (the parents' phone app)
+    // are left to the network and to their own worker.
+    const home = new URL('./', self.registration.scope).pathname
+    if (url.pathname !== home && url.pathname !== `${home}index.html`) return
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE)

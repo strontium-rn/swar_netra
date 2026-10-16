@@ -17,7 +17,12 @@ export type Word = {
   picture?: string // id of a photo the caregiver added; shown instead of the emoji
   speak: string // what is said out loud; can be a short sentence
   audio?: string // id of a caregiver's voice recording; if missing, the computer voice speaks
+  notify?: NotifyLevel // phone alert for this word; if missing, the group's default (see notifyLevel)
 }
+
+// Phone alerts per word. Not every word should ring a phone: "Yes" all day would be spam,
+// and parents would mute it, including the important ones.
+export type NotifyLevel = 'off' | 'normal' | 'urgent'
 
 export type Category = {
   kind: 'category'
@@ -168,6 +173,14 @@ export function findTile(id: string): Tile | undefined {
     current.categories.flatMap((c) => c.words).find((w) => w?.id === id) ??
     undefined
   )
+}
+
+// The phone alert for a word. Defaults: Help is urgent, Quick talk (yes/no/more...) is
+// conversation and doesn't alert, everything else (needs, food, feelings...) alerts normally.
+export function notifyLevel(word: Word, page: PageId): NotifyLevel {
+  if (word.notify) return word.notify
+  if (word.id === current.help.id) return 'urgent'
+  return page === 'quick' ? 'off' : 'normal'
 }
 
 // Every photo and recording the vocabulary uses (to delete the ones no longer needed).

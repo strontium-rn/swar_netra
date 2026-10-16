@@ -1,0 +1,11 @@
+{
+  "name": "Swar Netra Parent",
+  "short_name": "Swar Parent",
+  "description": "Get the child's Swar Netra messages on your phone, and reply.",
+  "start_url": "./phone.html",
+  "scope": "./phone",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

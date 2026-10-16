@@ -28,3 +28,6 @@ calibiration data/
 
 # Copied/downloaded by scripts/copy-mediapipe.mjs
 public/mediapipe/
+
+# Relay server data: VAPID private key and pairing secrets
+server/data/

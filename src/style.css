@@ -606,3 +606,52 @@ label {
 .ed-tip {
   margin-top: 16px;
 }
+
+/* ---- Phone alerts ---- */
+#alert-status {
+  position: absolute;
+  left: 32px;
+  bottom: 8px;
+  font-size: 15px;
+  color: #8bc34a;
+}
+
+#alert-status.warn {
+  color: #ffb74d;
+}
+
+#alerts-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.alerts-card {
+  max-width: 760px;
+}
+
+.alerts-card h2 {
+  margin-top: 0;
+}
+
+.alerts-pair {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.alerts-pair .qr svg {
+  width: 240px;
+  height: 240px;
+  border-radius: 8px;
+}
+
+.alerts-pair ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}

@@ -97,6 +97,7 @@ function checkWord(w: unknown): Word | null {
     speak: o.speak,
     ...(isText(o.picture) && { picture: o.picture }),
     ...(isText(o.audio) && { audio: o.audio }),
+    ...((o.notify === 'off' || o.notify === 'normal' || o.notify === 'urgent') && { notify: o.notify }),
   }
 }
 
