@@ -472,7 +472,7 @@ label {
 }
 
 .ed-pages {
-  margin: 16px 0;
+  margin: 16px 0 12px;
 }
 
 .ed-pages button {
@@ -487,6 +487,11 @@ label {
 }
 
 /* A small copy of the board: same 6 columns, same colors. */
+.ed-hint {
+  margin: 0 0 12px;
+  color: #ccc;
+}
+
 .ed-slots {
   display: flex;
   gap: 10px;
@@ -529,6 +534,17 @@ label {
 .ed-slot.selected {
   outline: 4px solid #fff;
   outline-offset: 3px;
+}
+
+.ed-preview {
+  display: flex;
+  gap: 2px;
+  font-size: 16px;
+}
+
+.ed-preview .photo {
+  height: 18px;
+  border-radius: 3px;
 }
 
 .ed-badge {

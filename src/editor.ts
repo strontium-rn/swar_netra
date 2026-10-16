@@ -11,6 +11,7 @@
 import { iconElement } from './board.ts'
 import { addMedia, mediaUrl } from './media.ts'
 import { speak } from './speech.ts'
+import { trimSilence } from './trimAudio.ts'
 import { saveVocabulary } from './storage.ts'
 import {
   BACK,
@@ -108,6 +109,13 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
         if (item) {
           const picture = 'picture' in item ? mediaUrl(item.picture) : undefined
           tile.append(iconElement(item.icon, picture, 'icon'), el('span', { className: 'label', textContent: item.label }))
+          // A group shows the words inside it, like on the board.
+          if (item.kind === 'category') {
+            const inside = item.words.flatMap((w) => (w ? [w] : []))
+            const icons = el('span', { className: 'ed-preview' })
+            icons.append(...inside.map((w) => iconElement(w.icon, mediaUrl(w.picture), 'preview-icon')))
+            tile.append(icons)
+          }
           if ('audio' in item && item.audio) tile.append(el('span', { className: 'ed-badge', textContent: '🎙️', title: 'Recorded voice' }))
         } else {
           tile.append(el('span', { className: 'label', textContent: '+ Empty' }))
@@ -123,8 +131,17 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
     )
   }
 
+  const hintEl = el('p', { className: 'ed-hint' })
+  function renderHint() {
+    hintEl.textContent =
+      page === 'home'
+        ? 'Home page: the first cards the child sees. Click a card to change its picture, text or color.'
+        : `Words inside “${category()?.label ?? ''}”. Click a word to change it, or an empty space to add one.`
+  }
+
   function render() {
     renderPages()
+    renderHint()
     renderSlots()
     renderForm()
   }
@@ -220,6 +237,19 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
         renderSlots()
       }
       formEl.append(row('Color', color, el('span', { className: 'muted', textContent: 'all words in this group share it' })))
+      formEl.append(
+        el('p', {
+          className: 'muted',
+          textContent:
+            'The small pictures and words on this card are the words inside this group. ' +
+            'They update by themselves when you change those words:',
+        }),
+        row('Words inside', button(`Edit the words in “${item.label}” ➡️`, () => {
+          page = item.id
+          slot = 1
+          render()
+        }, 'secondary')),
+      )
     }
 
     // Moving and removing (Help stays fixed in the first column).
@@ -281,7 +311,9 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
     r.onstop = async () => {
       mic.getTracks().forEach((t) => t.stop()) // turn the microphone off (and its indicator)
       recorder = null
-      word.audio = await addMedia(new Blob(chunks, { type: r.mimeType }))
+      const raw = new Blob(chunks, { type: r.mimeType })
+      // Cut the pauses before and after the word, so it plays the moment it's chosen.
+      word.audio = await addMedia(await trimSilence(raw).catch(() => raw))
       renderSlots()
       renderForm()
       speak(word.speak, mediaUrl(word.audio)) // play it back, so the caregiver can check it
@@ -326,6 +358,7 @@ export function openEditor(root: HTMLElement, saved: Vocabulary): Promise<Vocabu
         el('div', { className: 'ed-actions' }, button('Reset to starting words', reset, 'secondary'), button('Cancel', cancel, 'secondary'), button('Save', save)),
       ),
       pagesEl,
+      hintEl,
       slotsEl,
       formEl,
       el('p', {

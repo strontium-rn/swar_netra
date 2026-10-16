@@ -49,6 +49,14 @@ export async function addMedia(blob: Blob): Promise<string> {
   return id
 }
 
+// Replace a saved file's content, keeping its id (so the words pointing to it don't change).
+export async function replaceMedia(id: string, blob: Blob): Promise<void> {
+  await done((await store('readwrite')).put(blob, id))
+  const old = urls.get(id)
+  if (old) URL.revokeObjectURL(old)
+  urls.set(id, URL.createObjectURL(blob))
+}
+
 // Load all saved files, and delete the ones no longer used (e.g. a replaced photo).
 export async function loadMedia(keep: Set<string>): Promise<void> {
   try {

@@ -19,7 +19,8 @@ import { DriftTracker } from './driftTracker.ts'
 import { speak } from './speech.ts'
 import { findTile, mediaIds, pageTiles, tileColor, useVocabulary, vocabulary, type PageId } from './vocabulary.ts'
 import { loadCalibration, loadVocabulary, saveCalibration } from './storage.ts'
-import { loadMedia, mediaUrl } from './media.ts'
+import { getMedia, loadMedia, mediaUrl, replaceMedia } from './media.ts'
+import { trimSilence } from './trimAudio.ts'
 import { iconElement } from './board.ts'
 import { openEditor } from './editor.ts'
 import { enableOffline } from './offline.ts'
@@ -101,6 +102,7 @@ async function main() {
   // Photos and recordings load from the browser's database (fast, but not instant),
   // then the page is drawn again with them.
   await loadMedia(mediaIds(vocabulary()))
+  await trimOldRecordings()
   showPage('home')
 
   status.textContent = 'Starting camera…'
@@ -150,6 +152,22 @@ async function main() {
     requestAnimationFrame(loop)
   }
   loop()
+}
+
+// Recordings made before silence trimming existed still start with a pause: trim them once.
+// (Trimmed recordings are saved as WAV, so the format tells us which ones are already done.)
+async function trimOldRecordings() {
+  const v = vocabulary()
+  const ids = [v.help, ...v.categories.flatMap((c) => c.words)].flatMap((w) => (w?.audio ? [w.audio] : []))
+  for (const id of ids) {
+    const blob = await getMedia(id).catch(() => undefined)
+    if (!blob || blob.type === 'audio/wav') continue
+    try {
+      await replaceMedia(id, await trimSilence(blob))
+    } catch {
+      // can't decode it: keep the original, it still plays
+    }
+  }
 }
 
 // Everything that happens for one camera frame.
