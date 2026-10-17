@@ -2,6 +2,7 @@
   "name": "swar_netra",
   "private": true,
   "version": "0.0.0",
+  "description": "Eye-gaze communication board (AAC) that works with a normal laptop webcam",
   "type": "module",
   "scripts": {
     "setup-mediapipe": "node scripts/copy-mediapipe.mjs",
