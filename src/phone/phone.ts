@@ -11,7 +11,10 @@ import '../style.css'
 import './phone.css'
 import { fromBase64Url, seal, REPLY_TEXT, type Reply } from '../secureChannel.ts'
 
+// What this phone remembers after scanning the QR code. `key` is shared only with the
+// laptop (through the QR code), never the server; `phoneSecret` proves to the server that it's us.
 type Pairing = { householdId: string; phoneId: string; phoneSecret: string; key: string; name: string }
+// One word from the child. `answered` is filled in once any parent replies.
 type Message = { id: string; label: string; icon: string; speak: string; urgent: boolean; at: number; answered?: { name: string; reply: Reply } }
 
 const app = document.querySelector<HTMLElement>('#app')!
