@@ -43,6 +43,13 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
+## Next ideas
+
+- Test phone alerts on a real Android phone, and host the relay server online
+- Back up or share a word set as a file
+- More words: people, and a simple keyboard
+- If nobody answers an urgent alert, alert a second caregiver
+
 ## Code map
 
 | Where | What |
