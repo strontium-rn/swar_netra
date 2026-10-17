@@ -28,7 +28,7 @@ webcam → face points (MediaPipe) → iris position → personal gaze model →
 
 ## Run it
 
-You need [Node.js](https://nodejs.org).
+You need [Node.js](https://nodejs.org) 22.6 or newer.
 
 ```bash
 npm install

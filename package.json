@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "description": "Eye-gaze communication board (AAC) that works with a normal laptop webcam",
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "setup-mediapipe": "node scripts/copy-mediapipe.mjs",
     "predev": "node scripts/copy-mediapipe.mjs",
