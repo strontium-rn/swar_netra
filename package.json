@@ -14,6 +14,7 @@
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "tsc && tsc -p server && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p server",
     "server": "node --experimental-strip-types server/server.ts"
   },
   "devDependencies": {
