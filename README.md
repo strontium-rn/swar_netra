@@ -39,6 +39,7 @@ npm run server      # app + phone alerts server on http://localhost:8787
 Open http://localhost:8787 in Chrome and click **Start calibration**.
 
 - **Develop:** `npm run dev` (http://localhost:5173), with `npm run server` running alongside for phone alerts.
+- **Check your changes:** `npm run typecheck` finds type mistakes in the app and the server.
 - **Real phone:** phones need HTTPS for notifications. For a quick test, run `cloudflared tunnel --url http://localhost:8787` and open the `https://…` address it prints on the laptop.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
