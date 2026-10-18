@@ -43,6 +43,13 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
+## If something doesn't work
+
+- **No camera picture:** allow camera access in the browser (the icon at the left of the address bar), and close other apps using the webcam.
+- **Buttons get picked wrongly:** recalibrate with the light in front of you and your head still.
+- **No sound:** check the volume, and click once anywhere on the page (browsers block sound until you do).
+- **No phone notifications:** the phone must open the page over HTTPS, and notifications must be allowed for it in Chrome.
+
 ## Next ideas
 
 - Test phone alerts on a real Android phone, and host the relay server online
