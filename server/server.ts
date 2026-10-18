@@ -12,6 +12,11 @@
 //   5. Serving the app's files (the built `dist/` folder), so one server does everything.
 //
 // Run: npm run server   (after npm run build)
+//
+// Settings (optional environment variables):
+//   PORT           port to listen on (default 8787)
+//   DATA_DIR       where keys and pairings are saved (default server/data, never commit it)
+//   VAPID_SUBJECT  contact link sent to the push service (default: the GitHub repo)
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
