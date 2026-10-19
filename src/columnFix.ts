@@ -19,7 +19,7 @@
 import type { Recording } from './calibration.ts'
 import type { GazeModel } from './gazeModel.ts'
 
-const STRENGTH = 0.8
+const STRENGTH = 0.8 // correct 80% of each button's measured lean (see "Why only 80%" above)
 const MAX_FIX = 0.06 // never move any button's area by more than 6% of the screen (safety)
 const SAME_SPOT = 0.005 // a recording belongs to a button if its star was this close to the center
 
