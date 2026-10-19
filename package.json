@@ -4,6 +4,12 @@
   "version": "0.0.0",
   "description": "Eye-gaze communication board (AAC) that works with a normal laptop webcam",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/strontium-rn/swar_netra.git"
+  },
+  "homepage": "https://github.com/strontium-rn/swar_netra#readme",
+  "bugs": "https://github.com/strontium-rn/swar_netra/issues",
   "keywords": [
     "aac",
     "eye-tracking",
