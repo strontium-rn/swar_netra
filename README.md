@@ -44,6 +44,8 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
+**Privacy:** saved calibration data files contain your eye measurements. Keep them to yourself and never commit them (the `calibiration data/` folder is already ignored by git).
+
 ## If something doesn't work
 
 - **No camera picture:** allow camera access in the browser (the icon at the left of the address bar), and close other apps using the webcam.
