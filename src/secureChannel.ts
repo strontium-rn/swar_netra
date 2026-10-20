@@ -58,6 +58,8 @@ export async function open<T>(key: string, sealed: string): Promise<T> {
 }
 
 // What's inside the sealed boxes.
+// What the laptop sends (sealed). `label` may list several words when they were grouped;
+// `at` is when it was sent (laptop clock), so the phone can show the time.
 export type ChildMessage = { label: string; icon: string; speak: string; urgent: boolean; at: number }
 export type Reply = 'coming' | 'wait'
 export type ParentReply = { messageId: string; reply: Reply; name: string; at: number }
