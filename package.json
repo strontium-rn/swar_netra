@@ -30,7 +30,8 @@
     "build": "tsc && tsc -p server && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p server",
-    "server": "node --experimental-strip-types server/server.ts"
+    "server": "node --experimental-strip-types server/server.ts",
+    "tunnel": "cloudflared tunnel --protocol http2 --edge-ip-version 4 --url http://localhost:8787"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

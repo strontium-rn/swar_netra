@@ -40,7 +40,7 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 
 - **Develop:** `npm run dev` (http://localhost:5173), with `npm run server` running alongside for phone alerts.
 - **Check your changes:** `npm run typecheck` finds type mistakes in the app and the server.
-- **Real phone:** phones need HTTPS for notifications. For a quick test, run `cloudflared tunnel --protocol http2 --edge-ip-version 4 --url http://localhost:8787` and open the `https://…` address it prints on the laptop (not localhost: a phone can't reach that). The two extra options avoid networks where IPv6 doesn't work.
+- **Real phone:** phones need HTTPS for notifications. For a quick test, install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), run `npm run tunnel` and open the `https://…` address it prints on the laptop (not localhost: a phone can't reach that). The two extra options avoid networks where IPv6 doesn't work.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
