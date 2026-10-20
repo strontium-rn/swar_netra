@@ -93,6 +93,8 @@ self.addEventListener('push', (event) => {
       const push = event.data?.json()
       if (!p || !push) return
       if (push.type === 'message') {
+        // One message can hold several words picked in a row ("💬 🍎 Hungry · 💧 Water"):
+        // the laptop groups them, so this code shows it like any other message.
         const m = await unseal(p.key, push.data)
         const list = (await get('messages')) ?? []
         if (list.find((x) => x.id === push.id)?.answered) return // already handled
