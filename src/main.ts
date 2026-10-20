@@ -276,8 +276,9 @@ function updateBoard(target: string | null, now: number) {
     // Tell the parents' phones (if this word should alert, and phones are set up).
     const level = notifyLevel(tile, currentPage)
     if (level !== 'off' && alerts.enabled) {
-      showAlertStatus('📱 Sending…')
-      alerts.send(tile, level === 'urgent').then(showSendResult)
+      // Normal words wait a few seconds for more words, then go as one message.
+      showAlertStatus(level === 'urgent' ? '📱 Sending…' : '📱 Sending in a moment…')
+      alerts.say(tile, level === 'urgent').then(showSendResult)
     }
     // Stay on this page: only the user decides when to go back (via the Back button).
   }
@@ -295,14 +296,24 @@ function showSendResult(result: SendResult) {
   if (result === 'sent') showAlertStatus('📱 Sent to phone')
   else if (result === 'no-phones') showAlertStatus('📱 No phone is connected', true)
   else if (result === 'failed') showAlertStatus('⚠️ Not sent: no internet', true)
-  else showAlertStatus('')
+  else showAlertStatus(alerts.waiting ? '📱 Sending in a moment…' : '') // skipped: same word again
 }
 
 // A parent replied: show it big and say it, so the child knows someone is coming.
+// The banner sits above every screen, so the reply is seen even before calibration or
+// while a panel is open.
+const replyBanner = $<HTMLDivElement>('#reply-banner')
+let replyBannerTimer: ReturnType<typeof setTimeout> | undefined
+replyBanner.addEventListener('click', () => (replyBanner.hidden = true)) // a click closes it early
 alerts.onReply = (reply) => {
-  messageIcon.textContent = reply.reply === 'coming' ? '👍' : '⏳'
-  messageText.textContent = `${reply.name} ${REPLY_TEXT[reply.reply]}`
-  speak(`${reply.name} ${REPLY_TEXT[reply.reply]}`)
+  const icon = reply.reply === 'coming' ? '👍' : '⏳'
+  const text = `${reply.name} ${REPLY_TEXT[reply.reply]}`
+  // Only in the banner: the board's big message line keeps showing the child's own word.
+  replyBanner.textContent = `${icon} ${text}`
+  replyBanner.hidden = false
+  clearTimeout(replyBannerTimer)
+  replyBannerTimer = setTimeout(() => (replyBanner.hidden = true), 10_000)
+  speak(text)
   showAlertStatus('')
 }
 alerts.start()
@@ -457,6 +468,7 @@ calibrateBtn.addEventListener('click', calibrate)
 $('#edit-words').addEventListener('click', editWords)
 $('#welcome-edit').addEventListener('click', editWords)
 $('#phone-alerts').addEventListener('click', phoneAlerts)
+$('#welcome-alerts').addEventListener('click', phoneAlerts) // set up alerts before the first calibration too
 quickFixBtn.addEventListener('click', quickFix)
 saveDataBtn.addEventListener('click', saveData)
 recalibrateBtn.addEventListener('click', calibrate)

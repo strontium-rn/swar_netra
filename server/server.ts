@@ -8,7 +8,7 @@
 //   1. Pairing: a laptop creates a "household"; phones join it with the code from the QR.
 //   2. Forwarding: laptop message → Web Push → every phone in the household.
 //   3. Urgent repeats: an urgent message (Help) is re-sent every minute until someone replies.
-//   4. Replies: phone reply → laptop (live, over an open connection) + the other phones.
+//   4. Replies: phone reply → laptop (which asks for news every few seconds) + the other phones.
 //   5. Serving the app's files (the built `dist/` folder), so one server does everything.
 //
 // Run: npm run server   (after npm run build)
@@ -98,14 +98,20 @@ function phoneOf(body: Record<string, unknown>): { h: Household; phoneId: string
   return { h, phoneId, phone }
 }
 
-// ---- Live connection to the laptop ("Server-Sent Events") ----
-// The laptop keeps one request open; the server writes a line into it whenever something
-// happens (a reply arrived, a phone joined). Simpler than WebSockets, and the browser
-// reconnects by itself if the connection drops.
-const laptops = new Map<string, Set<ServerResponse>>()
+// ---- Replies waiting for the laptop ("polling") ----
+// The laptop asks every few seconds: "anything new after number N?". We first used one
+// held-open connection (Server-Sent Events) instead, but some networks and tunnels hold
+// such a stream back, and then replies never arrived. Plain short requests work everywhere.
+// Kept in memory only: a reply older than 10 minutes is no use to the child anyway.
+type Waiting = { n: number; at: number; messageId: string; data: string }
+const waiting = new Map<string, Waiting[]>()
+let counter = Date.now() // keeps growing, also across server restarts
+const KEEP_MS = 10 * 60_000
 
-function tellLaptop(householdId: string, event: unknown) {
-  for (const res of laptops.get(householdId) ?? []) res.write(`data: ${JSON.stringify(event)}\n\n`)
+function tellLaptop(householdId: string, messageId: string, data: string) {
+  const list = (waiting.get(householdId) ?? []).filter((r) => Date.now() - r.at < KEEP_MS)
+  list.push({ n: ++counter, at: Date.now(), messageId, data })
+  waiting.set(householdId, list.slice(-50))
 }
 
 const phoneList = (h: Household) => Object.entries(h.phones).map(([id, p]) => ({ id, name: p.name }))
@@ -132,7 +138,6 @@ async function pushToPhones(householdId: string, payload: Push, except?: string)
         if (status === 404 || status === 410) {
           delete h.phones[phoneId]
           await saveStore(store)
-          tellLaptop(householdId, { type: 'phones', phones: phoneList(h) })
         } else {
           console.warn('push failed', status, (err as Error).message)
         }
@@ -184,7 +189,6 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     const phoneSecret = token()
     h.phones[phoneId] = { secretHash: hash(phoneSecret), subscription: sub, name: String(body.name ?? '').slice(0, 400), addedAt: Date.now() }
     await saveStore(store)
-    tellLaptop(String(body.householdId), { type: 'phones', phones: phoneList(h) })
     return send(res, 200, { phoneId, phoneSecret })
   }
 
@@ -193,7 +197,6 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     const { h, phoneId } = phoneOf(body)
     delete h.phones[phoneId]
     await saveStore(store)
-    tellLaptop(String(body.householdId), { type: 'phones', phones: phoneList(h) })
     return send(res, 200, { ok: true })
   }
 
@@ -230,28 +233,24 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     const messageId = String(body.messageId)
     stop(messageId) // someone answered: no more urgent repeats
     const data = String(body.data)
-    tellLaptop(householdId, { type: 'reply', messageId, data })
+    tellLaptop(householdId, messageId, data)
     // Tell the other parents too, so they know it's handled (and don't all come running).
     await pushToPhones(householdId, { type: 'reply', id: messageId, data }, phoneId)
     return send(res, 200, { ok: true })
   }
 
-  // The laptop's live connection.
-  if (route === 'GET /api/events') {
-    const h = laptopOf({ householdId: url.searchParams.get('household'), laptopSecret: url.searchParams.get('secret') })
-    const householdId = url.searchParams.get('household')!
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
-    res.write(`data: ${JSON.stringify({ type: 'phones', phones: phoneList(h) })}\n\n`)
-    const set = laptops.get(householdId) ?? new Set()
-    set.add(res)
-    laptops.set(householdId, set)
-    // A comment line every 25 s keeps the connection alive through proxies and routers.
-    const ping = setInterval(() => res.write(': ping\n\n'), 25_000)
-    req.on('close', () => {
-      clearInterval(ping)
-      set.delete(res)
+  // The laptop asks for news: replies after number `after`, plus the current list of phones.
+  // `after` missing (page just opened) → no old replies, only the number to continue from.
+  if (route === 'POST /api/events') {
+    const body = await readJson(req)
+    const h = laptopOf(body)
+    const list = waiting.get(String(body.householdId)) ?? []
+    const after = typeof body.after === 'number' ? body.after : null
+    return send(res, 200, {
+      last: list.at(-1)?.n ?? counter,
+      phones: phoneList(h),
+      replies: after === null ? [] : list.filter((r) => r.n > after).map(({ messageId, data }) => ({ messageId, data })),
     })
-    return
   }
 
   throw new HttpError(404, 'No such API')
@@ -293,6 +292,11 @@ async function serveFile(res: ServerResponse, pathname: string) {
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
+  // One line per API call (path and result only: never secrets or contents). The laptop's
+  // regular "anything new?" checks are left out, or they'd drown everything else.
+  if (url.pathname.startsWith('/api/') && url.pathname !== '/api/events') {
+    res.on('finish', () => console.log(`${new Date().toLocaleTimeString()} ${req.method} ${url.pathname} → ${res.statusCode}`))
+  }
   try {
     if (url.pathname.startsWith('/api/')) await api(req, res, url)
     else if (req.method === 'GET') await serveFile(res, decodeURIComponent(url.pathname))

@@ -40,9 +40,20 @@ export function openAlertsPanel(root: HTMLElement, alerts: PhoneAlerts): Promise
       } else {
         const link = alerts.link()
         const qr = el('div', { className: 'qr' })
-        // The QR code is drawn as an SVG image (sharp at any size). The link inside carries the
-        // secret key, so treat this screen like a password: only show it to your own family.
-        qr.innerHTML = renderSVG(link, { border: 2, whiteColor: '#fff', blackColor: '#000' })
+        // "localhost" means "this same device": on a phone it points at the phone itself, so a
+        // QR code with that address can never work. Say what to do instead of showing it.
+        const onlyThisDevice = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+        if (onlyThisDevice) {
+          qr.className = 'qr-warning'
+          qr.append(
+            el('p', { innerHTML: '<b>⚠️ A phone can’t open this address.</b>' }),
+            el('p', { textContent: `This page is open at “${location.host}”, which means “this computer”. Open Swar Netra at its https:// address (for example the tunnel link), then come back here to get a QR code that works.` }),
+          )
+        } else {
+          // The QR code is drawn as an SVG image (sharp at any size). The link inside carries the
+          // secret key, so treat this screen like a password: only show it to your own family.
+          qr.innerHTML = renderSVG(link, { border: 2, whiteColor: '#fff', blackColor: '#000' })
+        }
         const phones = alerts.phones.length
           ? el('ul', {}, ...alerts.phones.map((p) => el('li', { textContent: `✓ ${p.name}` })))
           : el('p', { className: 'muted', textContent: 'No phones yet.' })
@@ -66,7 +77,7 @@ export function openAlertsPanel(root: HTMLElement, alerts: PhoneAlerts): Promise
             { className: 'row' },
             button('Send a test alert', () =>
               busy(async () => {
-                const result = await alerts.send({ label: 'Test', icon: '🔔', speak: 'This is a test' }, false)
+                const result = await alerts.send({ label: 'Test', icon: '🔔', speak: 'This is a test', urgent: false })
                 alert(result === 'sent' ? 'Test sent. Check the phone.' : result === 'no-phones' ? 'No phone is paired yet.' : 'Not sent: no connection to the server.')
               }),
             ),
