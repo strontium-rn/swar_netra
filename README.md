@@ -13,7 +13,7 @@ Eye-tracking AAC devices are expensive and need special hardware. Swar Netra aim
 - **Eye tracking with a normal webcam:** a short calibration (follow a ⭐) learns how *your* eyes move.
 - **Picture board:** one row of 6 big buttons (Help, Quick talk, Food & drink, Feelings, Activities, Body & needs). Look at one for about a second to say it.
 - **Editable by parents and therapists:** **Edit words** lets you change text, emojis, photos and colors, and record your own voice.
-- **Phone alerts:** the child's words reach the parents' Android phones. A parent taps **Coming**, and the laptop says "Mum is coming".
+- **Phone alerts:** the child's words reach the parents' Android phones, grouped into one notification when several are picked in a row (Help goes out at once). A parent taps **Coming**, and the laptop says "Mum is coming".
 - **Works offline:** after the first visit, the board works without internet (phone alerts need it).
 - **Private:** video never leaves the laptop. Phone alerts are end-to-end encrypted, so even our server can't read them.
 
