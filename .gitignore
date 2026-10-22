@@ -31,3 +31,7 @@ public/mediapipe/
 
 # Relay server data: VAPID private key and pairing secrets
 server/data/
+
+# Settings files with secrets (e.g. for hosting the server later)
+.env
+.env.*
