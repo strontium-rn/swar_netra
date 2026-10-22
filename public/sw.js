@@ -56,8 +56,8 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
-  // Server requests (phone alerts) must always go to the network: they're live data, and the
-  // reply connection never ends, so it could never be saved anyway.
+  // Server requests (phone alerts) must always go to the network: they're live data
+  // (who is paired, has a parent replied?), so a saved copy would be wrong.
   if (url.pathname.startsWith(new URL('api/', self.registration.scope).pathname)) return
 
   if (request.mode === 'navigate') {
