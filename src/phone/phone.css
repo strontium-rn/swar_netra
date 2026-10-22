@@ -65,6 +65,7 @@ body {
   background: #1d1d1d;
 }
 
+/* An urgent message nobody has answered yet: dark red so it stands out in the list. */
 .messages li.urgent {
   background: #5a1414;
 }
@@ -78,6 +79,7 @@ body {
   min-width: 60%;
 }
 
+/* "✓ Mum is coming": green, on its own line under the message. */
 .answered {
   width: 100%;
   color: #3ddc84;
