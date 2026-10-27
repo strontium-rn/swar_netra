@@ -4,8 +4,8 @@
 
 import type { Study } from './study.ts'
 
-// Where testers can ask questions about the study.
-const CONTACT = 'https://github.com/strontium-rn/swar_netra/issues'
+// Where testers can ask questions or report problems.
+const CONTACT_EMAIL = 'aarya4123@student.ku.edu.np'
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = Object.assign(document.createElement(tag), props)
@@ -66,7 +66,7 @@ export function openConsent(root: HTMLElement, study: Study): Promise<boolean> {
           'It is stored in an online database and used only by the researcher to improve this prototype. Results may appear in a student project report as summaries, never as individual details.',
           'You can leave at any time: click “Feedback”, then “Leave the study and delete my data”.',
         ),
-        el('p', { className: 'muted' }, 'Questions? ', el('a', { href: CONTACT, target: '_blank', rel: 'noopener', textContent: 'Ask here' }), '.'),
+        el('p', {}, 'Questions or problems? Email ', el('a', { href: `mailto:${CONTACT_EMAIL}`, textContent: CONTACT_EMAIL }), '.'),
         el('label', { className: 'check' }, adult, ' I am 18 or older.'),
         el('label', { className: 'check' }, agree, ' I have read this and agree to take part.'),
         el(
