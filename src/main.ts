@@ -28,6 +28,8 @@ import { PhoneAlerts, type SendResult } from './alerts.ts'
 import { openAlertsPanel } from './alertsPanel.ts'
 import { REPLY_TEXT } from './secureChannel.ts'
 import { enableOffline } from './offline.ts'
+import { Study } from './study.ts'
+import { deviceInfo, openConsent, openFeedback } from './studyPanel.ts'
 import { NoiseMeter, SIGNAL_ADVICE, signalLevel } from './signalQuality.ts'
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -77,6 +79,10 @@ const drift = new DriftTracker()
 const noiseMeter = new NoiseMeter()
 const board = new Board($<HTMLElement>('#words'))
 const alerts = new PhoneAlerts()
+const study = new Study()
+const studyPanel = $<HTMLDivElement>('#study-panel')
+let wordsThisSession = 0 // for the one-time "please give feedback" reminder
+let calibrationsThisSession = 0
 let currentPage: PageId = 'home'
 let centers: number[] = [] // x of each button center, for the drift tracker
 const updateCenters = () => (centers = board.centers().map((c) => c.x))
@@ -207,7 +213,7 @@ function onFrame(frame: FaceFrame | null, now: number, dt: number, aspect: numbe
   drawPoints(overlay, frame.points)
   drawHeadGuide(overlay, headRef, pose, headOff === null)
 
-  if (mode !== 'board' || !xModel || !yModel) return
+  if (mode !== 'board' || !studyPanel.hidden || !xModel || !yModel) return
 
   // Gaze → smoothing → position on screen (as fractions, clamped to 0..1).
   let gaze = { x: columnFix.apply(xModel.predict(features).x), y: yModel.predict(features).y }
@@ -270,6 +276,7 @@ function updateBoard(target: string | null, now: number) {
   } else {
     // A word: flash it, show it big for the listener, and say it.
     board.flash(tile.id)
+    remindFeedback()
     messageIcon.replaceChildren(iconElement(tile.icon, mediaUrl(tile.picture), 'message-photo'))
     messageText.textContent = tile.label
     speak(tile.speak, mediaUrl(tile.audio))
@@ -305,14 +312,19 @@ function showSendResult(result: SendResult) {
 const replyBanner = $<HTMLDivElement>('#reply-banner')
 let replyBannerTimer: ReturnType<typeof setTimeout> | undefined
 replyBanner.addEventListener('click', () => (replyBanner.hidden = true)) // a click closes it early
+// 'reply' = a parent's answer (green); 'notice' = a gentle note for the tester (blue).
+function showBanner(text: string, kind: 'reply' | 'notice', ms = 10_000) {
+  replyBanner.textContent = text
+  replyBanner.classList.toggle('notice', kind === 'notice')
+  replyBanner.hidden = false
+  clearTimeout(replyBannerTimer)
+  replyBannerTimer = setTimeout(() => (replyBanner.hidden = true), ms)
+}
 alerts.onReply = (reply) => {
   const icon = reply.reply === 'coming' ? '👍' : '⏳'
   const text = `${reply.name} ${REPLY_TEXT[reply.reply]}`
   // Only in the banner: the board's big message line keeps showing the child's own word.
-  replyBanner.textContent = `${icon} ${text}`
-  replyBanner.hidden = false
-  clearTimeout(replyBannerTimer)
-  replyBannerTimer = setTimeout(() => (replyBanner.hidden = true), 10_000)
+  showBanner(`${icon} ${text}`, 'reply')
   speak(text)
   showAlertStatus('')
 }
@@ -359,7 +371,13 @@ async function calibrate() {
     await document.documentElement.requestFullscreen().catch(() => {})
     await new Promise((resolve) => setTimeout(resolve, 300)) // let the layout resize
 
-    const result = await runCalibrationFlow(calibLayer, stream, board)
+    const started = performance.now()
+    calibrationsThisSession++
+    const result = await runCalibrationFlow(calibLayer, stream, board).catch((err: Error) => {
+      // Failed calibrations matter for improving the method too (study testers only).
+      study.record('calibration', { failed: err.message, seconds: Math.round((performance.now() - started) / 1000), attempt: calibrationsThisSession, device: deviceInfo() })
+      throw err
+    })
     xModel = result.xModel
     yModel = result.yModel
     columnFix = result.columnFix
@@ -369,6 +387,13 @@ async function calibrate() {
     savedHitRate = result.score.hitRate
     persist()
     showReport(result)
+    study.record('calibration', {
+      ...calibrationSummary(result),
+      seconds: Math.round((performance.now() - started) / 1000),
+      attempt: calibrationsThisSession, // 1 = first calibration since the page was opened
+      looks: { calibration: result.recordings.calibration.length, test: result.recordings.test.length }, // more than usual = redone buttons
+      device: deviceInfo(),
+    })
     saveDataBtn.hidden = false
     messageIcon.textContent = ''
     messageText.textContent =
@@ -421,22 +446,25 @@ async function quickFix() {
 
 // Download the raw calibration data as a file. It's only numbers (eye measurements and
 // star positions), no video or images, so it can be shared to diagnose problems.
-function saveData() {
-  if (!lastResult) return
-  const { recordings, candidates, score, xModel: xm, yModel: ym } = lastResult
-  const data = {
-    app: 'swar-netra',
-    savedAt: new Date().toISOString(),
+// The numbers that describe how a calibration went (no per-frame eye measurements).
+// Used by "Save calibration data" and, for study testers, sent to the study.
+function calibrationSummary(result: CalibrationResult) {
+  return {
     screen: { width: window.innerWidth, height: window.innerHeight },
     columns: board.centers(),
-    chosen: { x: xm.set.name, y: ym.set.name },
-    noise: lastResult.noise,
-    columnFix: lastResult.columnFix.toJSON(),
-    candidates: candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY, testHit: c.test.hitRate, testErrX: c.testErrX })),
-    score,
-    headRef,
-    recordings,
+    chosen: { x: result.xModel.set.name, y: result.yModel.set.name },
+    noise: result.noise,
+    columnFix: result.columnFix.toJSON(),
+    candidates: result.candidates.map((c) => ({ name: c.set.name, cvErrX: c.cvErrX, cvErrY: c.cvErrY, testHit: c.test.hitRate, testErrX: c.testErrX })),
+    score: result.score,
+    headRef: result.headRef,
   }
+}
+
+function saveData() {
+  if (!lastResult) return
+  // The file on this computer also keeps every frame's eye measurements, for replaying.
+  const data = { app: 'swar-netra', savedAt: new Date().toISOString(), ...calibrationSummary(lastResult), recordings: lastResult.recordings }
   const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }))
   const a = document.createElement('a')
   a.href = url
@@ -444,6 +472,30 @@ function saveData() {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// ---- User study ----
+
+async function feedback() {
+  if (mode === 'calibrating' || mode === 'editing') return
+  const before = mode
+  mode = 'editing' // the eyes select nothing while the form is open
+  await openFeedback(studyPanel, study)
+  mode = before
+}
+
+// Once per session: after some real use, remind study testers about the feedback form.
+function remindFeedback() {
+  wordsThisSession++
+  if (wordsThisSession === 12 && study.joined && !study.feedbackSent) {
+    showBanner('🙏 Done trying it? Please click “Feedback” (top right). It takes 2 minutes.', 'notice', 15_000)
+  }
+}
+
+// First visit: ask once whether this tester wants to take part. Records that couldn't be
+// sent last time (no internet) go out now.
+// (While it is open the eyes select nothing: see the check in onFrame.)
+if (!study.decided) openConsent(studyPanel, study)
+study.sendQueued()
 
 // ---- Word editor ----
 
@@ -468,6 +520,8 @@ calibrateBtn.addEventListener('click', calibrate)
 $('#edit-words').addEventListener('click', editWords)
 $('#welcome-edit').addEventListener('click', editWords)
 $('#phone-alerts').addEventListener('click', phoneAlerts)
+$('#feedback').addEventListener('click', feedback)
+$('#welcome-feedback').addEventListener('click', feedback)
 $('#welcome-alerts').addEventListener('click', phoneAlerts) // set up alerts before the first calibration too
 quickFixBtn.addEventListener('click', quickFix)
 saveDataBtn.addEventListener('click', saveData)

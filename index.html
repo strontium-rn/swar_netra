@@ -30,6 +30,7 @@
             <button id="fullscreen">Full screen</button>
             <button id="edit-words">Edit words</button>
             <button id="phone-alerts">Phone alerts</button>
+            <button id="feedback">Feedback</button>
           </div>
           <div class="row">
             <label><input type="checkbox" id="smooth" checked /> Smoothing</label>
@@ -63,6 +64,7 @@
           <button id="calibrate" disabled>Start calibration</button>
           <button id="welcome-edit" class="secondary">Edit words</button>
           <button id="welcome-alerts" class="secondary">Phone alerts</button>
+          <button id="welcome-feedback" class="secondary">Feedback</button>
         </div>
       </div>
     </div>
@@ -78,6 +80,9 @@
 
     <!-- A parent's reply ("Mum is coming"), shown on top of everything for a few seconds -->
     <div id="reply-banner" role="status" hidden></div>
+
+    <!-- User study: consent screen and feedback form -->
+    <div id="study-panel" hidden></div>
 
     <!-- Phone alerts setup (QR code for parents' phones) -->
     <div id="alerts-panel" hidden></div>

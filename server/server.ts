@@ -10,6 +10,8 @@
 //   3. Urgent repeats: an urgent message (Help) is re-sent every minute until someone replies.
 //   4. Replies: phone reply → laptop (which asks for news every few seconds) + the other phones.
 //   5. Serving the app's files (the built `dist/` folder), so one server does everything.
+//   6. User study: saves calibration results and feedback from testers who agreed, and lets
+//      the researcher download them (see "User study" below).
 //
 // Run: npm run server   (after npm run build)
 //
@@ -17,13 +19,15 @@
 //   PORT           port to listen on (default 8787)
 //   DATA_DIR       where keys and pairings are saved (default server/data, never commit it)
 //   VAPID_SUBJECT  contact link sent to the push service (default: the GitHub repo)
+//   DATABASE_URL   save everything in this Postgres database instead of files (for hosting)
+//   ADMIN_TOKEN    password for downloading the study data (no token = download switched off)
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import webpush from 'web-push'
-import { loadStore, saveStore, type Household, type Phone } from './store.ts'
+import { addStudyRecord, allStudyRecords, deleteParticipant, loadStore, saveStore, storageName, type Household, type Phone, type StudyRecord } from './store.ts'
 
 const PORT = Number(process.env.PORT ?? 8787)
 const DIST = join(import.meta.dirname, '..', 'dist')
@@ -253,7 +257,89 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
     })
   }
 
+  // ---- User study ----
+  // Only from testers who said yes on the consent screen (the app checks that before
+  // sending). Records carry a random participant ID: no names, emails or IP addresses.
+
+  if (route === 'POST /api/study/records') {
+    limitStudyRate(req)
+    const body = await readJson(req)
+    const participant = participantOf(body)
+    const kind = String(body.kind)
+    if (!STUDY_KINDS.includes(kind as StudyRecord['kind'])) throw new HttpError(400, 'Unknown record kind')
+    if (typeof body.data !== 'object' || body.data === null) throw new HttpError(400, 'No data')
+    await addStudyRecord({ participant, kind: kind as StudyRecord['kind'], data: body.data })
+    return send(res, 200, { ok: true })
+  }
+
+  // "Leave the study": delete everything this tester sent.
+  if (route === 'POST /api/study/withdraw') {
+    limitStudyRate(req)
+    const deleted = await deleteParticipant(participantOf(await readJson(req)))
+    return send(res, 200, { deleted })
+  }
+
+  // The researcher's download: everything, as JSON (or CSV for a spreadsheet: ?format=csv).
+  // Protected by ADMIN_TOKEN, sent as "Authorization: Bearer <token>" or ?token=<token>.
+  if (route === 'GET /api/study/export') {
+    const given = req.headers.authorization?.replace(/^Bearer /, '') ?? url.searchParams.get('token')
+    if (!ADMIN_HASH || !matches(given, ADMIN_HASH)) throw new HttpError(403, 'Wrong or missing admin token')
+    const records = await allStudyRecords()
+    if (url.searchParams.get('format') === 'csv') {
+      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="swar-netra-study.csv"', 'cache-control': 'no-store' })
+      return void res.end(toCsv(records))
+    }
+    res.writeHead(200, { 'content-type': 'application/json', 'content-disposition': 'attachment; filename="swar-netra-study.json"', 'cache-control': 'no-store' })
+    return void res.end(JSON.stringify(records, null, 1))
+  }
+
   throw new HttpError(404, 'No such API')
+}
+
+// ---- User study helpers ----
+
+const STUDY_KINDS: StudyRecord['kind'][] = ['consent', 'calibration', 'feedback']
+const ADMIN_HASH = process.env.ADMIN_TOKEN ? hash(process.env.ADMIN_TOKEN) : null
+
+function participantOf(body: Record<string, unknown>): string {
+  const id = body.participant
+  if (typeof id !== 'string' || !/^[\w-]{16,40}$/.test(id)) throw new HttpError(400, 'Bad participant ID')
+  return id
+}
+
+// At most 20 study requests per minute from one address: stops someone filling the
+// database with junk. The address is only kept in memory for this, never saved.
+const studyHits = new Map<string, number[]>()
+function limitStudyRate(req: IncomingMessage) {
+  // Behind a host like Render, the real address is the first one in X-Forwarded-For.
+  const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim()
+  const now = Date.now()
+  const recent = (studyHits.get(ip) ?? []).filter((t) => now - t < 60_000)
+  if (recent.length >= 20) throw new HttpError(429, 'Too many requests, try again in a minute')
+  recent.push(now)
+  studyHits.set(ip, recent)
+}
+
+// One row per record. Nested values are flattened into columns like "score.hitRate", so a
+// spreadsheet can sort and average them; lists stay as JSON text in one cell.
+function toCsv(records: StudyRecord[]): string {
+  const flat = records.map((r) => {
+    const row: Record<string, string> = { at: r.at, participant: r.participant, kind: r.kind }
+    const walk = (value: unknown, path: string) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k)
+      } else if (typeof value === 'string') {
+        // A typed comment starting with "=" would run as a formula in Excel ("CSV injection"):
+        // a leading ' makes the spreadsheet show it as plain text.
+        row[path] = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+      } else row[path] = JSON.stringify(value)
+    }
+    walk(r.data, '')
+    return row
+  })
+  const columns = [...new Set(flat.flatMap((row) => Object.keys(row)))]
+  const cell = (v = '') => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+  return [columns.join(','), ...flat.map((row) => columns.map((c) => cell(row[c])).join(','))].join('\n') + '\n'
 }
 
 function stop(messageId: string) {
@@ -306,4 +392,4 @@ createServer(async (req, res) => {
     if (status === 500) console.error(err)
     if (!res.headersSent) send(res, status, { error: err instanceof HttpError ? err.message : 'Server error' })
   }
-}).listen(PORT, () => console.log(`Swar Netra server on http://localhost:${PORT}`))
+}).listen(PORT, () => console.log(`Swar Netra server on http://localhost:${PORT} (saving to ${storageName})`))
