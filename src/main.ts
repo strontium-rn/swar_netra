@@ -491,6 +491,20 @@ function remindFeedback() {
   }
 }
 
+// Tested only on computers in Chromium browsers (Chrome, Edge, Brave). Say so up front,
+// instead of letting someone struggle with a calibration that may not work.
+function browserWarning(): string | null {
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile: boolean } }).userAgentData
+  if (uaData?.mobile || /iPhone|iPad|Android/i.test(navigator.userAgent)) return 'This looks like a phone or tablet. Swar Netra is made for a laptop or desktop computer with a webcam.'
+  if (!uaData) return 'For best results, please open Swar Netra in Google Chrome, Microsoft Edge or Brave. This browser has not been tested.'
+  return null
+}
+const warning = browserWarning()
+if (warning) {
+  $('#browser-warning').textContent = `⚠️ ${warning}`
+  $('#browser-warning').hidden = false
+}
+
 // First visit: ask once whether this tester wants to take part. Records that couldn't be
 // sent last time (no internet) go out now.
 // (While it is open the eyes select nothing: see the check in onFrame.)

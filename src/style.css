@@ -83,6 +83,13 @@ label {
   color: #ffb74d;
 }
 
+#browser-warning {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #3a2a00;
+  color: #ffd54f;
+}
+
 #status.ok {
   color: #3ddc84;
 }
