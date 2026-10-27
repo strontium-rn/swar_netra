@@ -48,6 +48,18 @@ export function openConsent(root: HTMLElement, study: Study): Promise<boolean> {
         { className: 'card study-card' },
         el('h2', { textContent: 'Help improve Swar Netra' }),
         el('p', { textContent: 'Swar Netra is a student prototype: an eye-gaze communication board for people who cannot speak. You are invited to try it and share how it went. Taking part is optional, and the app works exactly the same if you say no.' }),
+        // Shown first because these two things decide whether the test can work at all.
+        el(
+          'div',
+          { className: 'study-tips' },
+          el('h3', { textContent: 'Before you start' }),
+          list(
+            'Use a laptop or desktop computer with a webcam, in Google Chrome, Microsoft Edge or Brave. Phones, tablets, Safari and Firefox are not supported yet.',
+            'Test in daylight: sit facing a window, or with a bright lamp in front of you. Light behind you or a dim room makes the eye tracking much less accurate.',
+            'Sit about an arm’s length from the screen and keep your head fairly still.',
+            'The first visit can take up to a minute to load.',
+          ),
+        ),
         el('h3', { textContent: 'If you take part, we collect' }),
         list(
           'Calibration results: accuracy numbers, which formula fitted your eyes best, how steady the eye signal was, and your head position during calibration (as numbers).',

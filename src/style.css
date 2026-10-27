@@ -673,6 +673,19 @@ label {
   color: #00e5ff;
 }
 
+/* "Before you start": the browser and light advice, set apart so it is read first. */
+.study-tips {
+  margin: 16px 0;
+  padding: 4px 20px 8px;
+  border-left: 4px solid #ffb74d;
+  border-radius: 8px;
+  background: #2a2418;
+}
+
+.study-tips h3 {
+  color: #ffb74d;
+}
+
 .study-card .check {
   display: block;
   margin: 10px 0;
