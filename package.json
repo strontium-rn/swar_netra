@@ -35,12 +35,14 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.11.10",
     "@types/web-push": "^3.6.4",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.0",
+    "pg": "^8.13.1",
     "uqr": "^0.1.2",
     "web-push": "^3.6.7"
   }
