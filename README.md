@@ -39,16 +39,11 @@ npm run server      # app + phone alerts server on http://localhost:8787
 
 Open http://localhost:8787 in Chrome and click **Start calibration**.
 
-- **Develop:** `npm run dev` (http://localhost:5173), with `npm run server` running alongside for phone alerts.
-- **Check your changes:** `npm run typecheck` finds type mistakes in the app and the server.
-- **Real phone:** phones need HTTPS for notifications. For a quick test, install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), run `npm run tunnel` and open the `https://…` address it prints on the laptop (not localhost: a phone can't reach that). (It avoids IPv6, which doesn't work on some networks.)
 
-- **Online (Render + Neon, free):** create a free Postgres database on [Neon](https://neon.tech) and copy its connection string. On [Render](https://render.com), choose **New → Blueprint**, pick this repo, and paste the string as `DATABASE_URL`. Render builds and runs it from `render.yaml` and redeploys on every push.
-- **Study data:** download it from `/api/study/export?format=csv&token=…`, using the `ADMIN_TOKEN` shown in Render's Environment tab.
 
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
-**Privacy:** saved calibration data files contain your eye measurements. Keep them to yourself and never commit them (the `calibiration data/` folder is already ignored by git).
+
 
 ## If something doesn't work
 
