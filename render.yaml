@@ -1,0 +1,25 @@
+# Render "Blueprint": tells Render (render.com) how to build and run Swar Netra.
+# Render reads this file from the GitHub repo and redeploys on every push to main.
+#
+# Secrets are NOT written here (this repo is public). Render asks for DATABASE_URL when the
+# Blueprint is created, and makes up a random ADMIN_TOKEN by itself (see its Environment tab).
+
+services:
+  - type: web
+    name: swar-netra
+    runtime: node
+    plan: free # sleeps after ~15 min without visitors; the next visit wakes it (~1 min)
+    region: singapore # the closest Render region to Nepal
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run server
+    healthCheckPath: /api/vapid # Render checks this answers before switching to a new version
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL # the Neon connection string (postgresql://…)
+        sync: false
+      - key: ADMIN_TOKEN # password for downloading the study data
+        generateValue: true
+      - key: VAPID_SUBJECT
+        value: https://github.com/strontium-rn/swar_netra

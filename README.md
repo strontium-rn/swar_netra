@@ -16,6 +16,7 @@ Eye-tracking AAC devices are expensive and need special hardware. Swar Netra aim
 - **Phone alerts:** the child's words reach the parents' Android phones, grouped into one notification when several are picked in a row (Help goes out at once). A parent taps **Coming**, and the laptop says "Mum is coming".
 - **Works offline:** after the first visit, the board works without internet (phone alerts need it).
 - **Private:** video never leaves the laptop. Phone alerts are end-to-end encrypted, so even our server can't read them.
+- **User study (opt-in):** testers who agree send their calibration results and a feedback form, under a random ID. They can delete it any time.
 
 ⚠️ Early prototype: not yet tested with children, and not a medical device. Phone alerts can be delayed or missed; they support supervision, they don't replace it.
 
@@ -42,6 +43,9 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 - **Check your changes:** `npm run typecheck` finds type mistakes in the app and the server.
 - **Real phone:** phones need HTTPS for notifications. For a quick test, install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), run `npm run tunnel` and open the `https://…` address it prints on the laptop (not localhost: a phone can't reach that). (It avoids IPv6, which doesn't work on some networks.)
 
+- **Online (Render + Neon, free):** create a free Postgres database on [Neon](https://neon.tech) and copy its connection string. On [Render](https://render.com), choose **New → Blueprint**, pick this repo, and paste the string as `DATABASE_URL`. Render builds and runs it from `render.yaml` and redeploys on every push.
+- **Study data:** download it from `/api/study/export?format=csv&token=…`, using the `ADMIN_TOKEN` shown in Render's Environment tab.
+
 **Tips:** light on your face (not behind you), sit an arm's length from the screen, and keep your head still during calibration.
 
 **Privacy:** saved calibration data files contain your eye measurements. Keep them to yourself and never commit them (the `calibiration data/` folder is already ignored by git).
@@ -60,6 +64,8 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 - More words: people, and a simple keyboard
 - If nobody answers an urgent alert, alert a second caregiver
 
+Full write-up: [docs/PROJECT_REPORT.md](docs/PROJECT_REPORT.md).
+
 ## Code map
 
 | Where | What |
@@ -71,5 +77,6 @@ Open http://localhost:8787 in Chrome and click **Start calibration**.
 | `src/board.ts`, `dwell.ts`, `speech.ts` | Buttons, "look to select", speaking |
 | `src/vocabulary.ts`, `editor.ts`, `storage.ts`, `media.ts`, `trimAudio.ts` | Words, the editor, saving, photos and voice recordings |
 | `src/alerts*.ts`, `secureChannel.ts`, `src/phone/`, `phone.html` | Phone alerts: laptop side, encryption, parents' phone app |
-| `server/` | Relay server: pairing, push notifications, replies |
+| `src/study.ts`, `studyPanel.ts` | User study: consent screen, feedback form |
+| `server/` | Relay server: pairing, push notifications, replies, study records |
 | `public/sw.js`, `public/phone-sw.js` | Offline support, and phone notifications |
