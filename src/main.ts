@@ -487,7 +487,7 @@ async function feedback() {
 function remindFeedback() {
   wordsThisSession++
   if (wordsThisSession === 12 && study.joined && !study.feedbackSent) {
-    showBanner('🙏 Done trying it? Please click “Feedback” (top right). It takes 2 minutes.', 'notice', 15_000)
+    showBanner('Done trying it? Please click “Feedback” (top right). It takes 2 minutes.', 'notice', 15_000)
   }
 }
 

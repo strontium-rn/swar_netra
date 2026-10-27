@@ -46,7 +46,7 @@ export function openConsent(root: HTMLElement, study: Study): Promise<boolean> {
       el(
         'div',
         { className: 'card study-card' },
-        el('h2', { textContent: '🔬 Help improve Swar Netra' }),
+        el('h2', { textContent: 'Help improve Swar Netra' }),
         el('p', { textContent: 'Swar Netra is a student prototype: an eye-gaze communication board for people who cannot speak. You are invited to try it and share how it went. Taking part is optional, and the app works exactly the same if you say no.' }),
         el('h3', { textContent: 'If you take part, we collect' }),
         list(
@@ -121,7 +121,7 @@ export function openFeedback(root: HTMLElement, study: Study): Promise<void> {
         el(
           'div',
           { className: 'card study-card' },
-          el('h2', { textContent: '💬 Feedback' }),
+          el('h2', { textContent: 'Feedback' }),
           el('p', { textContent: 'To send feedback, please first read what is collected and agree to take part in the study.' }),
           el('div', { className: 'row' }, button('Read and decide', async () => {
             if (await openConsent(root, study)) openFeedback(root, study).then(resolve)
@@ -166,7 +166,7 @@ export function openFeedback(root: HTMLElement, study: Study): Promise<void> {
       status.textContent = 'Sending… (the server may take up to a minute to wake up)'
       const ok = await study.record('feedback', { answers, device: deviceInfo() })
       if (ok) {
-        show(root, el('div', { className: 'card study-card' }, el('h2', { textContent: '🙏 Thank you!' }), el('p', { textContent: 'Your feedback was sent. It really helps.' }), el('div', { className: 'row' }, button('Close', close))))
+        show(root, el('div', { className: 'card study-card' }, el('h2', { textContent: 'Thank you!' }), el('p', { textContent: 'Your feedback was sent. It really helps.' }), el('div', { className: 'row' }, button('Close', close))))
       } else {
         status.textContent = 'Couldn’t reach the server. Your answers are saved on this computer and will be sent automatically next time.'
         send.disabled = false
@@ -178,7 +178,7 @@ export function openFeedback(root: HTMLElement, study: Study): Promise<void> {
       el(
         'div',
         { className: 'card study-card' },
-        el('h2', { textContent: '💬 Feedback' }),
+        el('h2', { textContent: 'Feedback' }),
         el('p', { textContent: study.feedbackSent ? 'Thanks for your earlier feedback! You can send more anytime, e.g. after another session.' : 'A few quick questions about how it went. Every answer is optional.' }),
         form,
         status,
